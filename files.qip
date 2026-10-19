@@ -1,0 +1,24 @@
+set_global_assignment -name SYSTEMVERILOG_FILE Arcade-Gottlieb.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gottlieb_board.sv
+
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/gottlieb_main/gottlieb_main.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/gottlieb_main/gottlieb_video.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/gottlieb_snd_r1/gottlieb_snd_r1.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/gottlieb_snd_r2/gottlieb_snd_r2.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/riot6532.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/sc01/sc01.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/sc01/sc01_coef_rom.sv
+set_global_assignment -name SEARCH_PATH rtl/sound/sc01
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/knocker/knocker.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/knocker/knocker_rom.sv
+set_global_assignment -name SEARCH_PATH rtl/sound/knocker
+
+set_global_assignment -name VERILOG_FILE rtl/cpu/MCL86/Core/biu_max.v
+set_global_assignment -name VERILOG_FILE rtl/cpu/MCL86/Core/eu.v
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/MCL86/EU4Kx32.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/MCL86/dl2_bus.sv
+set_global_assignment -name QIP_FILE rtl/cpu/T65/t65.qip
+
+set_global_assignment -name VERILOG_FILE rtl/mister_custom/pause.v
+
+set_global_assignment -name VHDL_FILE rtl/ram_rom/dpram_dc.vhd
