@@ -88,8 +88,11 @@ always_ff @(posedge clk) begin
     end
 end
 
-wire [7:0] hh = hc[7:0] ^ {8{flip_x}};
-wire [7:0] vv = vc ^ {8{flip_y}};
+// CRT Flip turns the shown 256 x 240 picture 180 degrees (x -> 255 - x, y -> 239 - y), on top of the game's own flip;
+// sprites follow because the line buffer is built for next_vv and read at hh. The artwork module relies on it.
+wire [7:0] vc_c = crt_flip ? 8'd239 - vc : vc;
+wire [7:0] hh = hc[7:0] ^ {8{flip_x ^ crt_flip}};
+wire [7:0] vv = vc_c ^ {8{flip_y}};
 
 /////////////////////////////  Background DMA (lines 240-247)  /////////////////////////////
 
@@ -128,7 +131,7 @@ end
 logic        bank;
 logic  [7:0] line_q;
 // started on the clock hc wraps 317 -> 0 (vc still the old line), building for the line after the new one
-wire   [7:0] next_vv = (vc + 8'd2) ^ {8{flip_y}};
+wire   [7:0] next_vv = (crt_flip ? 8'd237 - vc : vc + 8'd2) ^ {8{flip_y}};
 
 typedef enum logic [3:0] {S_IDLE, S_CLR, S_R0, S_R1, S_R2, S_CHK, S_ROM0, S_ROM1, S_EMIT, S_NEXT} st_t;
 st_t         st;

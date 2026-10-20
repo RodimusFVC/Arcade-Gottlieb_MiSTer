@@ -1,5 +1,5 @@
 <misterromdescription>
-    <name>Video Vince and the Game Factory</name>
+    <name>Video Vince And The Game Factory</name>
     <region>US</region>
     <homebrew>no</homebrew>
     <bootleg>no</bootleg>
@@ -79,6 +79,6 @@
     <!-- Index 4: battery-backed CMOS RAM (4096 bytes) -->
     <nvram index="4" size="4096"/>
 
-    <remark>Video Vince and the Game Factory (Mylstar)</remark>
+    <remark>Video Vince And The Game Factory (Mylstar)</remark>
     <mratimestamp>20261018000000</mratimestamp>
 </misterromdescription>

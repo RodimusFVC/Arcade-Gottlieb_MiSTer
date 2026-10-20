@@ -3,6 +3,11 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/gottlieb_board.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/gottlieb_main/gottlieb_main.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/gottlieb_main/gottlieb_video.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/artwork.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/art_resample.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/png_decode.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/inflate.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/art_xclk.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/gottlieb_snd_r1/gottlieb_snd_r1.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/gottlieb_snd_r2/gottlieb_snd_r2.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/riot6532.sv

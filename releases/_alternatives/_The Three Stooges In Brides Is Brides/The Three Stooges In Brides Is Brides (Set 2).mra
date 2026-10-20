@@ -1,5 +1,5 @@
 <misterromdescription>
-    <name>The Three Stooges In Brides Is Brides (set 2)</name>
+    <name>The Three Stooges In Brides Is Brides (Set 2)</name>
     <region>US</region>
     <homebrew>no</homebrew>
     <bootleg>no</bootleg>
@@ -78,6 +78,6 @@
     <!-- Index 4: battery-backed CMOS RAM (4096 bytes) -->
     <nvram index="4" size="4096"/>
 
-    <remark>The Three Stooges In Brides Is Brides (set 2) (Mylstar)</remark>
+    <remark>The Three Stooges In Brides Is Brides (Set 2) (Mylstar)</remark>
     <mratimestamp>20261018000000</mratimestamp>
 </misterromdescription>
