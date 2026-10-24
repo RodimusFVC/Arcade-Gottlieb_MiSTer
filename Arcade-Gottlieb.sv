@@ -44,7 +44,8 @@ wire        ioctl_upload_req;
 wire  [7:0] ioctl_din;
 wire        ioctl_wr;
 wire  [7:0] ioctl_index;
-wire [24:0] ioctl_addr;
+wire [26:0] ioctl_addr27;                     // hps_io's full address: the artwork download can pass 32 MB
+wire [24:0] ioctl_addr = ioctl_addr27[24:0];  // every other ioctl user
 wire  [7:0] ioctl_dout;
 wire [15:0] joystick_0, joystick_1, joystick_2;
 wire [15:0] joy_a0;                  // left analog stick, pad 1: Y high byte, X low byte (signed, up / left negative)
@@ -158,6 +159,7 @@ localparam CONF_STR = {
 	"H1P2O[49],Backdrop,On,Off;",
 	"H1P2O[50],Overlay,On,Off;",
 	"H1P2O[51],Bezel,On,Off;",
+	"H1P2O[54],Control Panel,On,Off;",
 	"H1P2O[52],Side Art,On,Off;",
 	"H1P2O[53],Zoom to Screen,Off,On;",
 	"H1-;",
@@ -195,7 +197,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.ioctl_upload_req(ioctl_upload_req),
 	.ioctl_din(ioctl_din),
 	.ioctl_wr(ioctl_wr),
-	.ioctl_addr(ioctl_addr),
+	.ioctl_addr(ioctl_addr27),
 	.ioctl_dout(ioctl_dout),
 	.ioctl_index(ioctl_index),
 	.ioctl_wait(ioctl_wait),
@@ -402,13 +404,13 @@ wire        bd_ce, bd_hs, bd_vs, bd_hbl, bd_vbl;
 wire  [7:0] bd_r, bd_g, bd_b;
 wire [27:0] v_px;
 wire        a_wr;
-wire [24:0] a_addr;
+wire [26:0] a_addr;
 wire  [7:0] a_dout;
 art_xclk #(.IDX(8'd5), .VW(28)) art_xclk
 (
 	.clk_sys(CLK_SYS), .clk_art(CLK_40),
 	.bd_ce(bd_ce), .bd_px({bd_hs, bd_vs, bd_hbl, bd_vbl, bd_r, bd_g, bd_b}), .ce_art(ce_pix), .px(v_px),
-	.ioctl_wr(ioctl_wr), .ioctl_index(ioctl_index), .ioctl_addr(ioctl_addr), .ioctl_dout(ioctl_dout),
+	.ioctl_wr(ioctl_wr), .ioctl_index(ioctl_index), .ioctl_addr(ioctl_addr27), .ioctl_dout(ioctl_dout),
 	.ioctl_wait(ioctl_wait), .a_wr(a_wr), .a_addr(a_addr), .a_dout(a_dout), .art_wait(art_wait)
 );
 
@@ -423,8 +425,9 @@ wire        art_rd, art_we, art_clk;
 artwork #(.IDX(8'd5)) artwork
 (
 	.clk(CLK_40),
-	.sel(status[48:45]), .layer_off(status[51:49]), .side_off(status[52]), .zoom(status[53]),
+	.sel(status[48:45]), .layer_off({status[54], status[51:49]}), .side_off(status[52]), .zoom(status[53]),
 	.crt_flip(status[22]), .hdmi_flip(status[11]), .turn(status[12]), .avail(art_avail),
+	.hdmi_w(HDMI_WIDTH), .hdmi_h(HDMI_HEIGHT),
 	.ioctl_download(ioctl_download), .ioctl_index(ioctl_index), .ioctl_wr(a_wr),
 	.ioctl_addr(a_addr), .ioctl_dout(a_dout), .ioctl_wait(art_wait),
 	.ce_pix(ce_pix),

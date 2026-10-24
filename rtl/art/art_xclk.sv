@@ -28,11 +28,11 @@ module art_xclk #(parameter [7:0] IDX = 8'd5, parameter int VW = 28)
 
     input               ioctl_wr,       // clk_sys (hps_io)
     input        [7:0]  ioctl_index,
-    input       [24:0]  ioctl_addr,
+    input       [26:0]  ioctl_addr,
     input        [7:0]  ioctl_dout,
     output              ioctl_wait,     // clk_sys, to hps_io
     output              a_wr,           // clk_art
-    output reg  [24:0]  a_addr,         // held from a_wr until the next byte
+    output reg  [26:0]  a_addr,         // held from a_wr until the next byte
     output reg   [7:0]  a_dout,
     input               art_wait        // clk_art, from the artwork module
 );
