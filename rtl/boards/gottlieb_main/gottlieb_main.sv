@@ -136,11 +136,21 @@ logic [9:0] vram_va;
 logic [11:0] chram_va;
 logic [7:0] spram_va, vram_vd, chram_vd, spram_vd;
 
+// NVINV-2026-10-25: stored inverted on both ports, so unloaded NVRAM (BRAM powers up 00) reads FF like MAME's
+// DEFAULT_ALL_1 (Mad Planets then builds its default score table); the .nvm file format is unchanged. Original below:
+// dpram_dc #(.widthad_a(12)) u_nvram
+// (
+//     .clock_a(clk), .address_a(a[11:0]), .data_a(req_wdata), .wren_a(wr & in_nv), .q_a(nv_q),
+//     .clock_b(clk), .address_b(nv_addr), .data_b(nv_din), .wren_b(nv_we), .q_b(nv_dout)
+// );
+logic [7:0] nv_qn, nv_doutn;
 dpram_dc #(.widthad_a(12)) u_nvram
 (
-    .clock_a(clk), .address_a(a[11:0]), .data_a(req_wdata), .wren_a(wr & in_nv), .q_a(nv_q),
-    .clock_b(clk), .address_b(nv_addr), .data_b(nv_din), .wren_b(nv_we), .q_b(nv_dout)
+    .clock_a(clk), .address_a(a[11:0]), .data_a(~req_wdata), .wren_a(wr & in_nv), .q_a(nv_qn),
+    .clock_b(clk), .address_b(nv_addr), .data_b(~nv_din), .wren_b(nv_we), .q_b(nv_doutn)
 );
+assign nv_q    = ~nv_qn;
+assign nv_dout = ~nv_doutn;
 
 // 1000-2FFF (Reactor 1000-1FFF)
 wire [12:0] ram_a = a[12:0] - 13'h1000;

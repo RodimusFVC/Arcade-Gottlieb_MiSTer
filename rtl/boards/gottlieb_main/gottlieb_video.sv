@@ -8,7 +8,7 @@
 //
 //  Timing: 20 MHz / 4 = 5 MHz dot clock (80 MHz / 16). H 0-317 (HBLANK = H8, 256-317), V 0-255 (VBLANK 240-255).
 //  Sync positions not traced on the schematic: VSYNC 244-247, HSYNC 272-295, both mid-blanking.
-//  Flip: the board XORs the H / V counters (HH / VV) and renders in that space, so sprites follow the flip.
+//  Flip: the board renders in flipped counter space (HH = H ^ FF, VV = 239 - V as MAME), so sprites follow the flip.
 //
 //  Background: 32x32 map of 8x8 4bpp packed tiles (left pixel in the high nibble). The CPU's video RAM is copied
 //  into a display RAM by DMA during lines 240-247 (128 bytes a line, address {V2-V0, H7-H1}); the screen reads the
@@ -90,9 +90,14 @@ end
 
 // CRT Flip turns the shown 256 x 240 picture 180 degrees (x -> 255 - x, y -> 239 - y), on top of the game's own flip;
 // sprites follow because the line buffer is built for next_vv and read at hh. The artwork module relies on it.
-wire [7:0] vc_c = crt_flip ? 8'd239 - vc : vc;
+// MPFLIP-2026-10-25: the game's flip Y is also y -> 239 - y (MAME flips about the visible area; Mad Planets sets flip
+// X + Y and never clears rows 30-31, which an 8-bit XOR showed as two "0" columns). Original below:
+// wire [7:0] vc_c = crt_flip ? 8'd239 - vc : vc;
+// wire [7:0] hh = hc[7:0] ^ {8{flip_x ^ crt_flip}};
+// wire [7:0] vv = vc_c ^ {8{flip_y}};
+wire [7:0] vc_c = (crt_flip ^ flip_y) ? 8'd239 - vc : vc;
 wire [7:0] hh = hc[7:0] ^ {8{flip_x ^ crt_flip}};
-wire [7:0] vv = vc_c ^ {8{flip_y}};
+wire [7:0] vv = vc_c;
 
 /////////////////////////////  Background DMA (lines 240-247)  /////////////////////////////
 
@@ -131,7 +136,9 @@ end
 logic        bank;
 logic  [7:0] line_q;
 // started on the clock hc wraps 317 -> 0 (vc still the old line), building for the line after the new one
-wire   [7:0] next_vv = (crt_flip ? 8'd237 - vc : vc + 8'd2) ^ {8{flip_y}};
+// MPFLIP-2026-10-25: original below
+// wire   [7:0] next_vv = (crt_flip ? 8'd237 - vc : vc + 8'd2) ^ {8{flip_y}};
+wire   [7:0] next_vv = (crt_flip ^ flip_y) ? 8'd237 - vc : vc + 8'd2;
 
 typedef enum logic [3:0] {S_IDLE, S_CLR, S_R0, S_R1, S_R2, S_CHK, S_ROM0, S_ROM1, S_EMIT, S_NEXT} st_t;
 st_t         st;

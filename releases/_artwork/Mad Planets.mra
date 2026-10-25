@@ -22,7 +22,7 @@
     <flip>yes</flip>
 
     <players>2 (alternating)</players>
-    <joystick>8-way + dial: mouse X, left analog stick or D-pad</joystick>
+    <joystick>8-way + dial: spinner, mouse X, right analog stick X or Z / X keys</joystick>
     <special_controls></special_controls>
     <num_buttons>2</num_buttons>
     <buttons names="Button 1,Button 2,-,-,Coin,Start 1P,Start 2P,Pause,-,-" default="A,B,Select,Start,R,L"/>
@@ -71,7 +71,7 @@
             04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
             04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
             04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
-            04 05 06 07 00 03 01 00 02
+            04 05 06 07 00 03 01 00 06 06 0A
         </part>
     </rom>
 

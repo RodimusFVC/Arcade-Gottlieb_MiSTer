@@ -38,6 +38,7 @@ wire  [1:0] buttons;
 wire        forced_scandoubler;
 wire [10:0] ps2_key;
 wire [24:0] ps2_mouse;               // [24] toggles per packet, [23:16] dy (up +), [15:8] dx, [5] / [4] dy / dx sign
+wire  [8:0] spinner_0;               // [8] toggles per event, [7:0] signed delta
 wire        ioctl_download;
 wire        ioctl_upload;
 wire        ioctl_upload_req;
@@ -97,10 +98,12 @@ assign BUTTONS = 0;
 //   byte 149    tiles: [0] codes 00-7F from ROM, [1] codes 80-FF from ROM, [2] split at C0 (Screw Loose)
 //   byte 150    sound board: 0 none, 1 Rev 1, 2 Rev 1 + SC-01, 3 Rev 1 + SC-01A, 4 Rev 2
 //   byte 151    output port: 0 plain, 1 Q*bert knocker, 2 Qubes sprite bank, 3 3 Stooges joystick select
-//   byte 152    analog: [0] IN2 = trackball H, [1] IN3 = trackball V
+//   byte 152    analog: [0] IN2 = trackball H, [1] IN3 = trackball V, [2] IN3 = MAME IPT_DIAL (Mad Planets, Wiz Warz)
+//   bytes 153-154  dial: MAME PORT_SENSITIVITY * 128 / 100, PORT_KEYDELTA
 reg [7:0] game_var    = 8'd0;
 reg [7:0] game_flags  = 8'h00;
 reg [7:0] cfg_map = 8'd0, cfg_tile = 8'd3, cfg_snd = 8'd0, cfg_out = 8'd0, cfg_an = 8'd0;
+reg [7:0] cfg_dsens = 8'd0, cfg_dkey = 8'd0;
 reg [5:0] in_map[64];
 reg [7:0] port_idle[8] = '{8'h00,8'h00,8'h00,8'h00,8'h00,8'h00,8'h00,8'h00};
 reg [7:0] port_dip[8]  = '{8'h80,8'h80,8'h80,8'h80,8'h80,8'h80,8'h80,8'h80};
@@ -127,6 +130,8 @@ always @(posedge CLK_SYS) begin
         if (ioctl_addr == 25'd150) cfg_snd  <= ioctl_dout;
         if (ioctl_addr == 25'd151) cfg_out  <= ioctl_dout;
         if (ioctl_addr == 25'd152) cfg_an   <= ioctl_dout;
+        if (ioctl_addr == 25'd153) cfg_dsens <= ioctl_dout;
+        if (ioctl_addr == 25'd154) cfg_dkey  <= ioctl_dout;
     end
 end
 
@@ -171,6 +176,9 @@ localparam CONF_STR = {
 	"-;",
 	"OR,Autosave NVRAM,On,Off;",
 	"-;",
+	"H2O[30:28],Dial Sensitivity,1.0x,0.75x,0.5x,0.25x,0.125x,1.25x,1.5x,2.0x;",
+	"H2O[31],Dial Direction,Normal,Reversed;",
+	"H2-;",
 	"DIP;",
 	"-;",
 	"R0,Reset;",
@@ -192,7 +200,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_menumask({~art_avail, direct_video}),
+	.status_menumask({~cfg_an[2], ~art_avail, direct_video}),
 
 	.ioctl_download(ioctl_download),
 	.ioctl_upload(ioctl_upload),
@@ -212,7 +220,8 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.joystick_1(joystick_1),
 	.joystick_2(joystick_2),
 	.ps2_key(ps2_key),
-	.ps2_mouse(ps2_mouse)
+	.ps2_mouse(ps2_mouse),
+	.spinner_0(spinner_0)
 );
 
 ////////////////////   CLOCKS   ///////////////////
@@ -311,12 +320,17 @@ wire reset = RESET | status[0] | buttons[1] | ioctl_download | ~locked;
 // wire kb_pause = kb[12];
 // MAME default keys + coin-door keys (controllers.sv ctl_keyboard): kb [0] up [1] down [2] left [3] right [4] ctrl
 // [5] alt [6] 1 [7] 2 [8] 5 [9] 6 [10] 9 [11] T [12] P; kbx [0] 9 / F2 Advance (last key event wins), [1] 0 Auto Up /
-// Manual Down toggle (starts on Auto; presses ignored while paused), [2] 8 High Score Reset. ps2_key[9] = 1 while down.
+// Manual Down toggle (starts on Auto; presses ignored while paused), [2] 8 High Score Reset, [4:3] X / Z dial
+// increment / decrement (MAME's dial keys). ps2_key[9] = 1 while down.
 /* verilator lint_off UNUSED */
 wire [12:0] kb;                                    // [10] (9) unused: Advance is kbx[0]
 /* verilator lint_on UNUSED */
-wire  [2:0] kbx;
-ctl_keyboard #(.NX(4), .NXO(3), .XKEYS({24'h10_3E_02, 24'h20_45_01, 24'h10_06_00, 24'h10_46_00}), .XINIT(3'b010)) u_kb
+// DIAL-2026-10-25: original keyboard below (no dial keys)
+// wire  [2:0] kbx;
+// ctl_keyboard #(.NX(4), .NXO(3), .XKEYS({24'h10_3E_02, 24'h20_45_01, 24'h10_06_00, 24'h10_46_00}), .XINIT(3'b010)) u_kb
+wire  [4:0] kbx;
+ctl_keyboard #(.NX(6), .NXO(5), .XKEYS({24'h10_22_04, 24'h10_1A_03, 24'h10_3E_02, 24'h20_45_01, 24'h10_06_00, 24'h10_46_00}),
+               .XINIT(5'b00010)) u_kb
 (
 	.clk(CLK_SYS), .ps2_key(ps2_key), .pause(pause_cpu), .kb(kb), .kbx(kbx)
 );
@@ -639,6 +653,21 @@ arcade_video #(256,24) arcade_video
 	.fx(status[18:16])
 );
 
+// Dial (byte 152 bit 2: Mad Planets, Wiz Warz): MAME IPT_DIAL on IN3 at the MRA's MAME sensitivity / key delta. MiSTer
+// spinner, mouse X, right stick X (rate) and Z / X keys; the left stick and D-pad stay on the joystick only (as the
+// trackball's Y they turned the ship on every move). OSD sensitivity / direction.
+wire       dial_frame;
+wire [7:0] dial_pos;
+ctl_tick #(.MODE(0), .DW(1)) u_dft(.clk(CLK_SYS), .pause(pause_cpu), .vblank(bd_vbl), .period(1'b0), .tick(dial_frame));
+ctl_dial_mame u_dial
+(
+	.clk(CLK_SYS), .reset(1'b0), .pause(pause_cpu), .frame(dial_frame), .sens(cfg_dsens), .keyd(cfg_dkey),
+	.reverse(status[31]), .osd_sens(status[30:28]), .wheel(1'b0),
+	.spinner(spinner_0), .mouse_ev(ms_ev), .mouse_d(ms_dx[8:0]), .stick(joy_r0[7:0]), .paddle(8'd0), .use_paddle(1'b0),
+	.dec(kbx[3]), .inc(kbx[4]), .pos(dial_pos)
+);
+wire [7:0] track_v_bd = cfg_an[2] ? dial_pos : track_v;
+
 ///////////////                 Board                  ////////////////
 
 wire knocker;   // Q*bert knocker solenoid (thump synthesis not built yet)
@@ -668,7 +697,9 @@ gottlieb_board board
 	// .track_h(tb_x0[15:8]),
 	// .track_v(tb_y0[15:8]),
 	.track_h(track_h),
-	.track_v(track_v),
+	// DIAL-2026-10-25: original below
+	// .track_v(track_v),
+	.track_v(track_v_bd),
 
 	.ioctl_addr(ioctl_addr),
 	.ioctl_dout(ioctl_dout),
