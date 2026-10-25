@@ -50,7 +50,9 @@ wire  [7:0] ioctl_dout;
 wire [15:0] joystick_0, joystick_1, joystick_2;
 wire [15:0] joy_a0;                  // left analog stick, pad 1: Y high byte, X low byte (signed, up / left negative)
 wire [15:0] joy_r0, joy_r1;          // right analog sticks, pads 1 and 2
-wire [15:0] joy_a1;                  // left analog stick, pad 2
+/* verilator lint_off UNUSED */
+wire [15:0] joy_a1;                  // left analog stick, pad 2 (unused since CTL-2026-10-24: the board reads one trackball)
+/* verilator lint_on UNUSED */
 wire [21:0] gamma_bus;
 wire        direct_video;
 wire        video_rotated;
@@ -249,66 +251,161 @@ wire reset = RESET | status[0] | buttons[1] | ioctl_download | ~locked;
 
 ///////////////////         Keyboard           //////////////////
 
-reg kb_up = 0, kb_down = 0, kb_left = 0, kb_right = 0;
-reg kb_b1 = 0, kb_b2 = 0;
-reg kb_coin1 = 0, kb_coin2 = 0, kb_start1 = 0, kb_start2 = 0, kb_pause = 0, kb_service = 0, kb_tilt = 0;
-reg kb_hsreset = 0, auto_up = 1;   // coin door: High Score Reset key, Auto Up / Manual Down switch (starts on Auto)
+// CTL-2026-10-24: original keyboard block commented out below (now controllers.sv ctl_keyboard; keys act on press)
+// reg kb_up = 0, kb_down = 0, kb_left = 0, kb_right = 0;
+// reg kb_b1 = 0, kb_b2 = 0;
+// reg kb_coin1 = 0, kb_coin2 = 0, kb_start1 = 0, kb_start2 = 0, kb_pause = 0, kb_service = 0, kb_tilt = 0;
+// reg kb_hsreset = 0, auto_up = 1;   // coin door: High Score Reset key, Auto Up / Manual Down switch (starts on Auto)
+//
+// wire       pressed = ~ps2_key[9];
+// wire [7:0] code    = ps2_key[7:0];
+//
+// always @(posedge CLK_SYS) begin
+// 	reg old_state;
+// 	old_state <= ps2_key[10];
+// 	if (old_state != ps2_key[10]) begin
+// 		case (code)
+// 			'h16: kb_start1  <= pressed; // 1
+// 			'h1E: kb_start2  <= pressed; // 2
+// 			'h2E: kb_coin1   <= pressed; // 5
+// 			'h36: kb_coin2   <= pressed; // 6
+// 			'h46: kb_service <= pressed; // 9 (Advance)
+// 			'h06: kb_service <= pressed; // F2
+// 			'h45: if (pressed) auto_up <= ~auto_up; // 0 (Auto Up / Manual Down)
+// 			'h3E: kb_hsreset <= pressed; // 8 (High Score Reset)
+// 			'h2C: kb_tilt    <= pressed; // T
+// 			'h4D: kb_pause   <= pressed; // P
+//
+// 			'h75: kb_up      <= pressed; // up
+// 			'h72: kb_down    <= pressed; // down
+// 			'h6B: kb_left    <= pressed; // left
+// 			'h74: kb_right   <= pressed; // right
+// 			'h14: kb_b1      <= pressed; // ctrl
+// 			'h11: kb_b2      <= pressed; // alt
+// 		endcase
+// 	end
+// end
 
-wire       pressed = ~ps2_key[9];
-wire [7:0] code    = ps2_key[7:0];
-
-always @(posedge CLK_SYS) begin
-	reg old_state;
-	old_state <= ps2_key[10];
-	if (old_state != ps2_key[10]) begin
-		case (code)
-			'h16: kb_start1  <= pressed; // 1
-			'h1E: kb_start2  <= pressed; // 2
-			'h2E: kb_coin1   <= pressed; // 5
-			'h36: kb_coin2   <= pressed; // 6
-			'h46: kb_service <= pressed; // 9 (Advance)
-			'h06: kb_service <= pressed; // F2
-			'h45: if (pressed) auto_up <= ~auto_up; // 0 (Auto Up / Manual Down)
-			'h3E: kb_hsreset <= pressed; // 8 (High Score Reset)
-			'h2C: kb_tilt    <= pressed; // T
-			'h4D: kb_pause   <= pressed; // P
-
-			'h75: kb_up      <= pressed; // up
-			'h72: kb_down    <= pressed; // down
-			'h6B: kb_left    <= pressed; // left
-			'h74: kb_right   <= pressed; // right
-			'h14: kb_b1      <= pressed; // ctrl
-			'h11: kb_b2      <= pressed; // alt
-		endcase
-	end
-end
+// CTL2-2026-10-25: v1 keyboard + local coin-door block commented out below (now ctl_keyboard's extra-key table)
+// // MAME default keys (controllers.sv): kb [0] up [1] down [2] left [3] right [4] ctrl [5] alt [6] 1 [7] 2 [8] 5 [9] 6
+// // [10] 9 [11] T [12] P. The coin-door keys stay here: 9 / F2 Advance (one register, as before), 0 Auto Up / Manual
+// // Down, 8 High Score Reset. ps2_key[9] = 1 while the key is down.
+// /* verilator lint_off UNUSED */
+// wire [12:0] kb;                                    // [10] (9) unused: Advance is kb_service below
+// /* verilator lint_on UNUSED */
+// ctl_keyboard u_kb(.clk(CLK_SYS), .ps2_key(ps2_key), .kb(kb));
+//
+// reg kb_service = 0, kb_hsreset = 0, auto_up = 1;   // coin door: Advance, High Score Reset, Auto Up / Manual Down (starts on Auto)
+// always @(posedge CLK_SYS) begin
+// 	reg old_state;
+// 	old_state <= ps2_key[10];
+// 	if (old_state != ps2_key[10]) begin
+// 		case (ps2_key[7:0])
+// 			'h46: kb_service <= ps2_key[9]; // 9 (Advance)
+// 			'h06: kb_service <= ps2_key[9]; // F2
+// 			'h45: if (ps2_key[9]) auto_up <= ~auto_up; // 0 (Auto Up / Manual Down)
+// 			'h3E: kb_hsreset <= ps2_key[9]; // 8 (High Score Reset)
+// 		endcase
+// 	end
+// end
+// wire kb_pause = kb[12];
+// MAME default keys + coin-door keys (controllers.sv ctl_keyboard): kb [0] up [1] down [2] left [3] right [4] ctrl
+// [5] alt [6] 1 [7] 2 [8] 5 [9] 6 [10] 9 [11] T [12] P; kbx [0] 9 / F2 Advance (last key event wins), [1] 0 Auto Up /
+// Manual Down toggle (starts on Auto; presses ignored while paused), [2] 8 High Score Reset. ps2_key[9] = 1 while down.
+/* verilator lint_off UNUSED */
+wire [12:0] kb;                                    // [10] (9) unused: Advance is kbx[0]
+/* verilator lint_on UNUSED */
+wire  [2:0] kbx;
+ctl_keyboard #(.NX(4), .NXO(3), .XKEYS({24'h10_3E_02, 24'h20_45_01, 24'h10_06_00, 24'h10_46_00}), .XINIT(3'b010)) u_kb
+(
+	.clk(CLK_SYS), .ps2_key(ps2_key), .pause(pause_cpu), .kb(kb), .kbx(kbx)
+);
+wire auto_up = kbx[1], kb_hsreset = kbx[2];       // coin door: Auto Up / Manual Down switch, High Score Reset
+wire kb_pause = kb[12];
 
 //////////////////  Arcade Buttons/Interfaces   ///////////////////////////
 
 // Joystick bits: 0 R, 1 L, 2 D, 3 U, 4-7 Btn 1-4, 8 Coin, 9 Start 1P, 10 Start 2P, 11 Pause, 12-13 Btn 5-6
-wire [3:0] dir1_raw = {joystick_0[3] | kb_up, joystick_0[2] | kb_down, joystick_0[1] | kb_left, joystick_0[0] | kb_right};
+// CTL-2026-10-24: original directions / 4-way / twin-stick fire / control ids commented out below (now controllers.sv)
+// wire [3:0] dir1_raw = {joystick_0[3] | kb_up, joystick_0[2] | kb_down, joystick_0[1] | kb_left, joystick_0[0] | kb_right};
+// wire [3:0] dir2_raw = joystick_1[3:0];
+// wire [3:0] dir1, dir2;   // {U, D, L, R}
+//
+// joy4way joy4way_1(.clk(CLK_SYS), .en(game_flags[0]), .in(dir1_raw), .out(dir1));
+// joy4way joy4way_2(.clk(CLK_SYS), .en(game_flags[0]), .in(dir2_raw), .out(dir2));
+//
+// wire m_pause = joystick_0[11] | kb_pause;
+//
+// // Twin-stick fire (Robotron, Splat, Inferno): Btn 1-4 = fire up / down / left / right, ORed with the right stick
+// // pushed past a dead zone (8-way: a diagonal gives two directions)
+// function [3:0] rstick(input [15:0] a);   // {right, left, down, up}
+// 	reg signed [7:0] x, y;
+// 	begin
+// 		x = a[7:0]; y = a[15:8];
+// 		rstick = {x > 8'sd40, x < -8'sd40, y > 8'sd40, y < -8'sd40};
+// 	end
+// endfunction
+// wire [3:0] rs0 = rstick(joy_r0), rs1 = rstick(joy_r1);
+// wire [3:0] fire1 = joystick_0[7:4] | {rs0[3], rs0[2], rs0[1], rs0[0]};   // {R, L, D, U} on Btn 4-1
+// wire [3:0] fire2 = joystick_1[7:4] | {rs1[3], rs1[2], rs1[1], rs1[0]};
+//
+// // control ids used by the MRA input map (same numbering as the Exidy core; 24-31 reserved for analog)
+// wire [63:0] ctl =
+// {
+// 	16'd0,
+// 	kb_hsreset,                                     // 47 high score reset
+// 	auto_up,                                        // 46 Auto Up / Manual Down switch
+// 	2'd0,                                           // 45-44 reserved
+// 	joystick_2[9],                                  // 43 P3 start
+// 	joystick_2[4],                                  // 42 P3 Btn 1
+// 	joystick_2[0], joystick_2[1], joystick_2[2], joystick_2[3],   // 41 P3 R, 40 L, 39 D, 38 U (3 Stooges)
+// 	dir1[3] | dir1[2], dir1[1] | dir1[0],          // 37 P1 U or D, 36 P1 L or R (49-way stick off centre)
+// 	joystick_1[13:12],                              // 35-34 P2 Btn 6-5
+// 	joystick_0[13:12],                              // 33-32 P1 Btn 6-5
+// 	fire2,                                          // 31-28 P2 fire R, L, D, U (Btn 4-1 or right stick)
+// 	fire1,                                          // 27-24 P1 fire R, L, D, U (Btn 4-1 or right stick)
+// 	1'b0,                                           // 23 coin 3
+// 	kb_service,                                     // 22 service
+// 	kb_tilt,                                        // 21 tilt
+// 	joystick_0[10] | joystick_1[10] | joystick_1[9] | kb_start2,   // 20 start 2 (pad 2's Start is Start 2P)
+// 	joystick_0[9]  | kb_start1,                     // 19 start 1
+// 	joystick_1[8]  | kb_coin2,                      // 18 coin 2
+// 	joystick_0[8]  | kb_coin1,                      // 17 coin 1
+// 	joystick_1[7:4],                                // 16-13 P2 Btn 4-1
+// 	dir2[0], dir2[1], dir2[2], dir2[3],             // 12 R, 11 L, 10 D, 9 U
+// 	joystick_0[7:6], joystick_0[5] | kb_b2, joystick_0[4] | kb_b1,   // 8-5 P1 Btn 4-1
+// 	dir1[0], dir1[1], dir1[2], dir1[3],             // 4 R, 3 L, 2 D, 1 U
+// 	1'b0                                            // 0 none
+// };
+
+wire [3:0] dir1_raw = {joystick_0[3] | kb[0], joystick_0[2] | kb[1], joystick_0[1] | kb[2], joystick_0[0] | kb[3]};
 wire [3:0] dir2_raw = joystick_1[3:0];
 wire [3:0] dir1, dir2;   // {U, D, L, R}
 
-joy4way joy4way_1(.clk(CLK_SYS), .en(game_flags[0]), .in(dir1_raw), .out(dir1));
-joy4way joy4way_2(.clk(CLK_SYS), .en(game_flags[0]), .in(dir2_raw), .out(dir2));
+ctl_joy4way u_j4w1(.clk(CLK_SYS), .en(game_flags[0]), .in(dir1_raw), .out(dir1));
+ctl_joy4way u_j4w2(.clk(CLK_SYS), .en(game_flags[0]), .in(dir2_raw), .out(dir2));
 
 wire m_pause = joystick_0[11] | kb_pause;
 
 // Twin-stick fire (Robotron, Splat, Inferno): Btn 1-4 = fire up / down / left / right, ORed with the right stick
-// pushed past a dead zone (8-way: a diagonal gives two directions)
-function [3:0] rstick(input [15:0] a);   // {right, left, down, up}
-	reg signed [7:0] x, y;
-	begin
-		x = a[7:0]; y = a[15:8];
-		rstick = {x > 8'sd40, x < -8'sd40, y > 8'sd40, y < -8'sd40};
-	end
-endfunction
-wire [3:0] rs0 = rstick(joy_r0), rs1 = rstick(joy_r1);
-wire [3:0] fire1 = joystick_0[7:4] | {rs0[3], rs0[2], rs0[1], rs0[0]};   // {R, L, D, U} on Btn 4-1
-wire [3:0] fire2 = joystick_1[7:4] | {rs1[3], rs1[2], rs1[1], rs1[0]};
+// pushed past +-40 (8-way: a diagonal gives two directions)
+wire [3:0] rs0, rs1;   // {U, D, L, R}
+ctl_stick_dirs #(.MODE(0), .THRESH(7'd40)) u_rs0(.stick(joy_r0), .dir(rs0));
+ctl_stick_dirs #(.MODE(0), .THRESH(7'd40)) u_rs1(.stick(joy_r1), .dir(rs1));
+wire [3:0] fire1 = joystick_0[7:4] | {rs0[0], rs0[1], rs0[2], rs0[3]};   // {R, L, D, U} on Btn 4-1
+wire [3:0] fire2 = joystick_1[7:4] | {rs1[0], rs1[1], rs1[2], rs1[3]};
 
-// control ids used by the MRA input map (same numbering as the Exidy core; 24-31 reserved for analog)
+// control ids used by the MRA input map: 0-23 and 32-35 shared (controllers.sv ctl_ids), 24-31 / 36-47 this core's
+/* verilator lint_off UNUSED */
+wire [35:0] ids;                                   // 31-24 unused (0 in ctl_ids; this core's ids below)
+/* verilator lint_on UNUSED */
+ctl_ids u_ids
+(
+	// CTL2-2026-10-25: original below
+// 	.joy0(joystick_0), .joy1(joystick_1), .kb({kb[12:11], kb_service, kb[9:0]}), .dir1(dir1), .dir2(dir2),
+	.joy0(joystick_0), .joy1(joystick_1), .kb({kb[12:11], kbx[0], kb[9:0]}), .dir1(dir1), .dir2(dir2),
+	.coin1(joystick_0[8] | kb[8]), .coin2(joystick_1[8] | kb[9]), .coin3(1'b0), .ctl(ids)
+);
 wire [63:0] ctl =
 {
 	16'd0,
@@ -319,53 +416,67 @@ wire [63:0] ctl =
 	joystick_2[4],                                  // 42 P3 Btn 1
 	joystick_2[0], joystick_2[1], joystick_2[2], joystick_2[3],   // 41 P3 R, 40 L, 39 D, 38 U (3 Stooges)
 	dir1[3] | dir1[2], dir1[1] | dir1[0],          // 37 P1 U or D, 36 P1 L or R (49-way stick off centre)
-	joystick_1[13:12],                              // 35-34 P2 Btn 6-5
-	joystick_0[13:12],                              // 33-32 P1 Btn 6-5
+	ids[35:32],                                     // 35-32 P2 / P1 Btn 6-5
 	fire2,                                          // 31-28 P2 fire R, L, D, U (Btn 4-1 or right stick)
 	fire1,                                          // 27-24 P1 fire R, L, D, U (Btn 4-1 or right stick)
-	1'b0,                                           // 23 coin 3
-	kb_service,                                     // 22 service
-	kb_tilt,                                        // 21 tilt
-	joystick_0[10] | joystick_1[10] | joystick_1[9] | kb_start2,   // 20 start 2 (pad 2's Start is Start 2P)
-	joystick_0[9]  | kb_start1,                     // 19 start 1
-	joystick_1[8]  | kb_coin2,                      // 18 coin 2
-	joystick_0[8]  | kb_coin1,                      // 17 coin 1
-	joystick_1[7:4],                                // 16-13 P2 Btn 4-1
-	dir2[0], dir2[1], dir2[2], dir2[3],             // 12 R, 11 L, 10 D, 9 U
-	joystick_0[7:6], joystick_0[5] | kb_b2, joystick_0[4] | kb_b1,   // 8-5 P1 Btn 4-1
-	dir1[0], dir1[1], dir1[2], dir1[3],             // 4 R, 3 L, 2 D, 1 U
-	1'b0                                            // 0 none
+	ids[23:0]                                       // 23-0 shared ids (pad 2's Start is Start 2P)
 };
 
-// Trackballs / spinner (Speed Ball AN0-AN3, Conquest dial): 8-bit position counters per player and axis, X right +,
-// Y up +. Player 1: mouse, else the left analog stick, else the D-pad; player 2: its left analog stick, else its D-pad.
-// Sticks and D-pads move a 16-bit position at 2930 Hz by the deflection (D-pad: half scale); the top byte is the count.
-// One mouse count = half a position count.
-wire signed [7:0] ax = joy_a0[7:0], ay = joy_a0[15:8], bx1 = joy_a1[7:0], by1 = joy_a1[15:8];
-wire       a_on  = (ax  > 8'sd24) || (ax  < -8'sd24) || (ay  > 8'sd24) || (ay  < -8'sd24);
-wire       a1_on = (bx1 > 8'sd24) || (bx1 < -8'sd24) || (by1 > 8'sd24) || (by1 < -8'sd24);
-wire signed [15:0] mdx = {{7{ps2_mouse[4]}}, ps2_mouse[15:8], 1'b0} <<< 6;
-wire signed [15:0] mdy = {{7{ps2_mouse[5]}}, ps2_mouse[23:16], 1'b0} <<< 6;
-function signed [15:0] step(input on, input signed [7:0] v, input neg, input pos);   // stick, else D-pad
-	step = on ? {{8{v[7]}}, v} : neg ? -16'sd64 : pos ? 16'sd64 : 16'sd0;
-endfunction
-reg [15:0] tb_x0 = 0, tb_y0 = 0, tb_x1 = 0, tb_y1 = 0;
-reg [13:0] tb_div = 0;
-reg        mouse_t = 0;
-always @(posedge CLK_SYS) begin
-	mouse_t <= ps2_mouse[24];
-	tb_div  <= tb_div + 1'd1;
-	if (mouse_t != ps2_mouse[24]) begin
-		tb_x0 <= tb_x0 + mdx;
-		tb_y0 <= tb_y0 + mdy;
-	end
-	else if (!tb_div) begin   // stick Y is up negative, the counter up positive
-		tb_x0 <= tb_x0 + step(a_on,  ax,  dir1[1], dir1[0]);
-		tb_y0 <= tb_y0 - step(a_on,  ay,  dir1[3], dir1[2]);
-		tb_x1 <= tb_x1 + step(a1_on, bx1, dir2[1], dir2[0]);
-		tb_y1 <= tb_y1 - step(a1_on, by1, dir2[3], dir2[2]);
-	end
-end
+// CTL-2026-10-24: original trackball counters commented out below (now controllers.sv ctl_trackball)
+// // Trackballs / spinner (Speed Ball AN0-AN3, Conquest dial): 8-bit position counters per player and axis, X right +,
+// // Y up +. Player 1: mouse, else the left analog stick, else the D-pad; player 2: its left analog stick, else its D-pad.
+// // Sticks and D-pads move a 16-bit position at 2930 Hz by the deflection (D-pad: half scale); the top byte is the count.
+// // One mouse count = half a position count.
+// wire signed [7:0] ax = joy_a0[7:0], ay = joy_a0[15:8], bx1 = joy_a1[7:0], by1 = joy_a1[15:8];
+// wire       a_on  = (ax  > 8'sd24) || (ax  < -8'sd24) || (ay  > 8'sd24) || (ay  < -8'sd24);
+// wire       a1_on = (bx1 > 8'sd24) || (bx1 < -8'sd24) || (by1 > 8'sd24) || (by1 < -8'sd24);
+// wire signed [15:0] mdx = {{7{ps2_mouse[4]}}, ps2_mouse[15:8], 1'b0} <<< 6;
+// wire signed [15:0] mdy = {{7{ps2_mouse[5]}}, ps2_mouse[23:16], 1'b0} <<< 6;
+// function signed [15:0] step(input on, input signed [7:0] v, input neg, input pos);   // stick, else D-pad
+// 	step = on ? {{8{v[7]}}, v} : neg ? -16'sd64 : pos ? 16'sd64 : 16'sd0;
+// endfunction
+// reg [15:0] tb_x0 = 0, tb_y0 = 0, tb_x1 = 0, tb_y1 = 0;
+// reg [13:0] tb_div = 0;
+// reg        mouse_t = 0;
+// always @(posedge CLK_SYS) begin
+// 	mouse_t <= ps2_mouse[24];
+// 	tb_div  <= tb_div + 1'd1;
+// 	if (mouse_t != ps2_mouse[24]) begin
+// 		tb_x0 <= tb_x0 + mdx;
+// 		tb_y0 <= tb_y0 + mdy;
+// 	end
+// 	else if (!tb_div) begin   // stick Y is up negative, the counter up positive
+// 		tb_x0 <= tb_x0 + step(a_on,  ax,  dir1[1], dir1[0]);
+// 		tb_y0 <= tb_y0 - step(a_on,  ay,  dir1[3], dir1[2]);
+// 		tb_x1 <= tb_x1 + step(a1_on, bx1, dir2[1], dir2[0]);
+// 		tb_y1 <= tb_y1 - step(a1_on, by1, dir2[3], dir2[2]);
+// 	end
+// end
+
+// Trackball / spinner (Speed Ball, Conquest dial), player 1 (the board reads one): X right +, Y up +. Mouse (half a
+// count per count), left stick (any axis past +-24 drives both, by the deflection) or D-pad (+-64) at clk / 16384
+// (2930 Hz) on a 16-bit position; the top byte is the count. Every source on one clock is summed.
+wire       ms_ev;
+wire [9:0] ms_dx, ms_dy;
+/* verilator lint_off UNUSED */
+wire [2:0] ms_btn;
+wire [1:0] track_dir;
+/* verilator lint_on UNUSED */
+wire [7:0] track_h, track_v;
+wire       tb_tick;
+ctl_mouse u_ms(.clk(CLK_SYS), .ps2_mouse(ps2_mouse), .ev(ms_ev), .dx(ms_dx), .dy(ms_dy), .btn(ms_btn));
+// CTL2-2026-10-25: original below (tick and trackball now stop while paused)
+// ctl_tick #(.MODE(1), .DW(14)) u_tbt(.clk(CLK_SYS), .pause(1'b0), .vblank(1'b0), .period(14'd16383), .tick(tb_tick));
+// ctl_trackball #(.CW(16), .OUT_W(8), .MOUSE_SH(7), .STICK_RSH(0), .DPAD_STEP(64), .DZ(24), .LIVE_ANY(1)) u_tb
+// (
+// 	.clk(CLK_SYS), .reset(1'b0), .pause(1'b0), .rev(2'b10), .unit_sh(2'd0), .base_sh(4'd8), .speed(2'd0),
+ctl_tick #(.MODE(1), .DW(14)) u_tbt(.clk(CLK_SYS), .pause(pause_cpu), .vblank(1'b0), .period(14'd16383), .tick(tb_tick));
+ctl_trackball #(.CW(16), .OUT_W(8), .MOUSE_SH(7), .STICK_RSH(0), .DPAD_STEP(64), .DZ(24), .LIVE_ANY(1)) u_tb
+(
+	.clk(CLK_SYS), .reset(1'b0), .pause(pause_cpu), .rev(2'b10), .unit_sh(2'd0), .base_sh(4'd8), .speed(2'd0),
+	.mouse_ev(ms_ev), .mouse_dx(ms_dx), .mouse_dy(ms_dy), .spinner(9'd0), .quad_ce(2'b00), .quad_dir(2'b00),
+	.tick(tb_tick), .stick_en(1'b1), .stick(joy_a0), .dpad(dir1), .x(track_h), .y(track_v), .dir(track_dir)
+);
 
 // DIP switches arrive from the OSD via ioctl index 254
 reg [7:0] dip_sw[8] = '{8'hFF,8'hFF,8'hFF,8'hFF,8'h00,8'h00,8'h00,8'h00};
@@ -374,12 +485,49 @@ always @(posedge CLK_SYS) begin
 		dip_sw[ioctl_addr[2:0]] <= ioctl_dout;
 end
 
-reg [7:0] in_port[8];
-always @(posedge CLK_SYS) begin
-	for (int p = 0; p < 8; p++)
-		for (int b = 0; b < 8; b++)
-			in_port[p][b] <= (port_dip[p][7] ? port_idle[p][b] : dip_sw[port_dip[p][2:0]][dip_bit[p*8 + b]]) ^ ctl[in_map[p*8 + b]];
-end
+// CTL2-2026-10-25: original port loop commented out below (now controllers.sv ctl_port_map BASE_MODE 2)
+// reg [7:0] in_port[8];
+// always @(posedge CLK_SYS) begin
+// 	for (int p = 0; p < 8; p++)
+// 		for (int b = 0; b < 8; b++)
+// 			in_port[p][b] <= (port_dip[p][7] ? port_idle[p][b] : dip_sw[port_dip[p][2:0]][dip_bit[p*8 + b]]) ^ ctl[in_map[p*8 + b]];
+// end
+// MRA input map -> board input ports (controllers.sv ctl_port_map, registered): port_dip[p][7] = 1 takes the idle byte,
+// else DIP byte port_dip[p][2:0] bit dip_bit[]; a pressed control (id in_map[]) inverts the bit
+wire  [7:0] in_port[8];
+wire [63:0] pm_idle, pm_sel, pm_dips, pm_ports;
+wire [511:0] pm_map;
+wire [191:0] pm_dbit;
+// CTL2-2026-10-25: Quartus 17.0 rejects `for (genvar ...)` in the loop header (error 10170) and genvar b clashed
+// with wire b; genvars now declared at module scope inside generate. Original block:
+// for (genvar p = 0; p < 8; p++) begin : g_pm
+// 	assign pm_idle[p*8 +: 8] = port_idle[p];
+// 	assign pm_sel[p*8 +: 8]  = port_dip[p];
+// 	assign pm_dips[p*8 +: 8] = dip_sw[p];
+// 	assign in_port[p]        = pm_ports[p*8 +: 8];
+// 	for (genvar b = 0; b < 8; b++) begin : g_b
+// 		assign pm_map[(p*8 + b)*8 +: 8]  = {2'b00, in_map[p*8 + b]};
+// 		assign pm_dbit[(p*8 + b)*3 +: 3] = dip_bit[p*8 + b];
+// 	end
+// end
+genvar pm_p, pm_b;
+generate
+	for (pm_p = 0; pm_p < 8; pm_p = pm_p + 1) begin : g_pm
+		assign pm_idle[pm_p*8 +: 8] = port_idle[pm_p];
+		assign pm_sel[pm_p*8 +: 8]  = port_dip[pm_p];
+		assign pm_dips[pm_p*8 +: 8] = dip_sw[pm_p];
+		assign in_port[pm_p]        = pm_ports[pm_p*8 +: 8];
+		for (pm_b = 0; pm_b < 8; pm_b = pm_b + 1) begin : g_b
+			assign pm_map[(pm_p*8 + pm_b)*8 +: 8]  = {2'b00, in_map[pm_p*8 + pm_b]};
+			assign pm_dbit[(pm_p*8 + pm_b)*3 +: 3] = dip_bit[pm_p*8 + pm_b];
+		end
+	end
+endgenerate
+ctl_port_map #(.NP(8), .IDW(6), .BASE_MODE(2)) u_pm
+(
+	.clk(CLK_SYS), .idle(pm_idle), .in_map(pm_map), .dips(32'd0), .port_sel(pm_sel), .dip_bytes(pm_dips),
+	.dip_bit(pm_dbit), .ctl(ctl), .ovr_mask(64'd0), .ovr_val(64'd0), .ports(pm_ports)
+);
 
 // PAUSE SYSTEM
 wire [23:0] rgb_out;
@@ -516,8 +664,11 @@ gottlieb_board board
 	.joy_p1(in_port[5][3:0]),
 	.joy_p2(in_port[6][3:0]),
 	.joy_p3(in_port[7][3:0]),
-	.track_h(tb_x0[15:8]),
-	.track_v(tb_y0[15:8]),
+	// CTL-2026-10-24: original below
+	// .track_h(tb_x0[15:8]),
+	// .track_v(tb_y0[15:8]),
+	.track_h(track_h),
+	.track_v(track_v),
 
 	.ioctl_addr(ioctl_addr),
 	.ioctl_dout(ioctl_dout),
@@ -549,31 +700,32 @@ assign ioctl_upload_req = ~status[27] & ~ioctl_download;
 
 endmodule
 
-// 4-way joystick: the most recently pressed direction wins (from the MiSTer Pac-Man port)
-module joy4way
-(
-	input        clk,
-	input        en,
-	input  [3:0] in,
-	output [3:0] out
-);
-
-reg  [3:0] mask = 4'hF;
-reg  [3:0] in1 = 0, in2 = 0;
-wire [3:0] innew = in1 & ~in2;
-
-assign out = in1 & mask;
-
-always @(posedge clk) begin
-	in1 <= in;
-	in2 <= in1;
-
-	if (innew[0]) mask <= 4'b0001;
-	if (innew[1]) mask <= 4'b0010;
-	if (innew[2]) mask <= 4'b0100;
-	if (innew[3]) mask <= 4'b1000;
-
-	if (!(in & mask) || !en) mask <= 4'hF;
-end
-
-endmodule
+// CTL-2026-10-24: original 4-way module commented out below (now controllers.sv ctl_joy4way, same logic)
+// // 4-way joystick: the most recently pressed direction wins (from the MiSTer Pac-Man port)
+// module joy4way
+// (
+// 	input        clk,
+// 	input        en,
+// 	input  [3:0] in,
+// 	output [3:0] out
+// );
+//
+// reg  [3:0] mask = 4'hF;
+// reg  [3:0] in1 = 0, in2 = 0;
+// wire [3:0] innew = in1 & ~in2;
+//
+// assign out = in1 & mask;
+//
+// always @(posedge clk) begin
+// 	in1 <= in;
+// 	in2 <= in1;
+//
+// 	if (innew[0]) mask <= 4'b0001;
+// 	if (innew[1]) mask <= 4'b0010;
+// 	if (innew[2]) mask <= 4'b0100;
+// 	if (innew[3]) mask <= 4'b1000;
+//
+// 	if (!(in & mask) || !en) mask <= 4'hF;
+// end
+//
+// endmodule
