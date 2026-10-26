@@ -181,10 +181,16 @@ always_ff @(posedge clk) begin
             else clr_i <= clr_i + 8'd1;
         end
         // dpram_dc registers its address, so each read costs a wait cycle
+        // SPRFLIPY-2026-10-26: under the game's flip Y, sprites sit 3 lines above an exact mirror (Mad Planets' hiscore
+        // box frames its letter's tile cell; HW screenshot measured 3 px off). Not MAME (228 - sy goes the other way). Original below:
+        // else begin s_y <= $signed({2'b00, spram_d}) - 10'sd13; spram_sel <= 2'd1; wait_c <= 2'd0; st <= S_R1; end
         S_R0: if (wait_c != 2'd1) wait_c <= wait_c + 2'd1;
-              else begin s_y <= $signed({2'b00, spram_d}) - 10'sd13; spram_sel <= 2'd1; wait_c <= 2'd0; st <= S_R1; end
+              else begin s_y <= $signed({2'b00, spram_d}) - (flip_y ? 10'sd10 : 10'sd13); spram_sel <= 2'd1; wait_c <= 2'd0; st <= S_R1; end
+        // SPRFLIPX-2026-10-25: under the game's flip X, MAME draws sprites 7 px below an exact mirror (sx = 233 - sx,
+        // not 240 - sx); Mad Planets' hiscore cursor sat 7 px off its letter. Counter +7 = screen -7. Original below:
+        // else begin s_x <= {2'b00, spram_d} - 10'd4; spram_sel <= 2'd2; wait_c <= 2'd0; st <= S_R2; end
         S_R1: if (wait_c != 2'd1) wait_c <= wait_c + 2'd1;
-              else begin s_x <= {2'b00, spram_d} - 10'd4; spram_sel <= 2'd2; wait_c <= 2'd0; st <= S_R2; end
+              else begin s_x <= {2'b00, spram_d} + (flip_x ? 10'd3 : -10'd4); spram_sel <= 2'd2; wait_c <= 2'd0; st <= S_R2; end
         S_R2: if (wait_c != 2'd1) wait_c <= wait_c + 2'd1;
               else begin s_code <= {spritebank, ~spram_d}; wait_c <= 2'd0; st <= S_CHK; end
         S_CHK: if (row_s >= 10'sd0 && row_s < 10'sd16) begin
