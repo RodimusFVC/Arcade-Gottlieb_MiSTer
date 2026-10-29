@@ -1,32 +1,12 @@
-//============================================================================
-//
-//  Gottlieb GG-III video: raster timing, background tiles, sprites, palette
+//  Based on MAME gottlieb.cpp (Fabrice Frances, Nicola Salmoria, Aaron Giles, BSD-3-Clause)
+//  Sprite engine shape after the LaserdiscGames core's mach3_video.sv
 //  Copyright (C) 2026 Rodimus
-//
-//  From the Q*bert manual logic board sheets 2-3 (facts: Claude/gottlieb_schematic_facts.md); sprite engine shape
-//  carried over from the LaserdiscGames core's mach3_video.sv.
-//
-//  Timing: 20 MHz / 4 = 5 MHz dot clock (80 MHz / 16). H 0-317 (HBLANK = H8, 256-317), V 0-255 (VBLANK 240-255).
-//  Sync positions not traced on the schematic: VSYNC 244-247, HSYNC 272-295, both mid-blanking.
-//  Flip: the board renders in flipped counter space (HH = H ^ FF, VV = 239 - V as MAME), so sprites follow the flip.
-//
-//  Background: 32x32 map of 8x8 4bpp packed tiles (left pixel in the high nibble). The CPU's video RAM is copied
-//  into a display RAM by DMA during lines 240-247 (128 bytes a line, address {V2-V0, H7-H1}); the screen reads the
-//  copy. Tile data from the tile ROM (8K, codes 00-FF) or the CPU-written char RAM (4K, codes 00-7F) by tile_cfg:
-//  [0] codes 00-7F from ROM, [1] codes 80-FF from ROM, [2] low / high split at C0 instead of 80 (Screw Loose).
-//
-//  Sprites: 64 x {Y, X, code} (byte 3 not stored), 16x16 4bpp, one ROM per plane. y = ram[0] - 13, x = ram[1] - 4,
-//  code = ~ram[2] + 256 * spritebank (MAME, hand-tuned against Qubes). Built a line ahead into a ping-pong line
-//  buffer; pen 0 transparent; left 8 pixels clipped. The board's per-line sprite limit is not modelled (not traced).
-//
-//  Priority (OP30): 0 = sprites over the background, 1 = background pens 1-15 over sprites.
-//  Palette: 16 entries x 2 bytes (even = G 7:4 / B 3:0, odd = R 3:0), each gun 2K / 1K / 470 / 240 ohm into 180 ohm.
-//
-//============================================================================
 
 module gottlieb_video
 (
-    input  logic        clk,            // 80 MHz
+    output ram_pool_pkg::pram_i_t [1:0] pr_i,
+    input  ram_pool_pkg::pram_o_t [1:0] pr_o,
+    input  logic        clk,
     input  logic        reset,
 
     input  logic        bg_priority,
@@ -39,7 +19,7 @@ module gottlieb_video
     input  logic  [4:0] pal_wa,
     input  logic  [7:0] pal_wd,
 
-    output logic  [9:0] vram_a,         // CPU video RAM, DMA read
+    output logic  [9:0] vram_a,
     input  logic  [7:0] vram_d,
     output logic [11:0] chram_a,
     input  logic  [7:0] chram_d,
@@ -66,14 +46,9 @@ module gottlieb_video
     output logic        video_vblank
 );
 
-/////////////////////////////  5 MHz dot clock  /////////////////////////////
-
-// div counts the 16 core clocks of a dot; ce_pix is high in slot 0, when hc / vc step to the next dot
 logic [3:0] div;
 always_ff @(posedge clk) div <= reset ? 4'd0 : div + 4'd1;
 always_ff @(posedge clk) ce_pix <= (div == 4'd15);
-
-/////////////////////////////  Raster counters  /////////////////////////////
 
 logic [8:0] hc;
 logic [7:0] vc;
@@ -83,23 +58,14 @@ always_ff @(posedge clk) begin
     end else if (ce_pix) begin
         if (hc == 9'd317) begin
             hc <= 9'd0;
-            vc <= vc + 8'd1;            // 0-255 wraps
+            vc <= vc + 8'd1;
         end else hc <= hc + 9'd1;
     end
 end
 
-// CRT Flip turns the shown 256 x 240 picture 180 degrees (x -> 255 - x, y -> 239 - y), on top of the game's own flip;
-// sprites follow because the line buffer is built for next_vv and read at hh. The artwork module relies on it.
-// MPFLIP-2026-10-25: the game's flip Y is also y -> 239 - y (MAME flips about the visible area; Mad Planets sets flip
-// X + Y and never clears rows 30-31, which an 8-bit XOR showed as two "0" columns). Original below:
-// wire [7:0] vc_c = crt_flip ? 8'd239 - vc : vc;
-// wire [7:0] hh = hc[7:0] ^ {8{flip_x ^ crt_flip}};
-// wire [7:0] vv = vc_c ^ {8{flip_y}};
 wire [7:0] vc_c = (crt_flip ^ flip_y) ? 8'd239 - vc : vc;
 wire [7:0] hh = hc[7:0] ^ {8{flip_x ^ crt_flip}};
 wire [7:0] vv = vc_c;
-
-/////////////////////////////  Background DMA (lines 240-247)  /////////////////////////////
 
 wire       dma_win = (vc[7:3] == 5'b11110) && !hc[8];
 wire [9:0] dma_a   = {vc[2:0], hc[7:1]};
@@ -107,15 +73,14 @@ assign vram_a = dma_a;
 
 logic [7:0] bg_q;
 logic [7:0] bg_ra;
-dpram_dc #(.widthad_a(10)) u_bgram
-(
-    .clock_a(clk), .address_a(dma_a), .data_a(vram_d), .wren_a(dma_win && div == 4'd4), .q_a(),
-    .clock_b(clk), .address_b({vv[7:3], hh[7:3]}), .data_b(8'd0), .wren_b(1'b0), .q_b(bg_q)
-);
+assign pr_i[0].a_addr = {5'd0, dma_a};
+assign pr_i[0].a_d    = vram_d;
+assign pr_i[0].a_we   = dma_win && div == 4'd4;
+assign pr_i[0].b_addr = {5'd0, {vv[7:3], hh[7:3]}};
+assign pr_i[0].b_d    = 8'd0;
+assign pr_i[0].b_we   = 1'b0;
+assign bg_q = pr_o[0].b_q;
 
-/////////////////////////////  Background pixel  /////////////////////////////
-
-// slot 1: map address (hc / vc settled); slot 3: tile code; slot 4: tile address; slot 6: tile byte
 logic [7:0] code;
 logic       use_rom;
 always_ff @(posedge clk) if (div == 4'd3) code <= bg_q;
@@ -130,14 +95,8 @@ always_ff @(posedge clk) if (div == 4'd6) begin
     else         bg_pen <= hh[0] ? chram_d[3:0]    : chram_d[7:4];
 end
 
-/////////////////////////////  Sprite line buffer  /////////////////////////////
-
-// Built for the next line into the inactive half while the current line is shown from the other.
 logic        bank;
 logic  [7:0] line_q;
-// started on the clock hc wraps 317 -> 0 (vc still the old line), building for the line after the new one
-// MPFLIP-2026-10-25: original below
-// wire   [7:0] next_vv = (crt_flip ? 8'd237 - vc : vc + 8'd2) ^ {8{flip_y}};
 wire   [7:0] next_vv = (crt_flip ^ flip_y) ? 8'd237 - vc : vc + 8'd2;
 
 typedef enum logic [3:0] {S_IDLE, S_CLR, S_R0, S_R1, S_R2, S_CHK, S_ROM0, S_ROM1, S_EMIT, S_NEXT} st_t;
@@ -151,7 +110,7 @@ logic  [9:0] s_x;
 logic  [8:0] s_code;
 logic  [3:0] s_row;
 logic        half;
-logic [31:0] pl_l, pl_r;            // left / right 8 pixels, four planes
+logic [31:0] pl_l, pl_r;
 logic  [3:0] emit_i;
 logic        lb_we;
 logic  [8:0] lb_wa;
@@ -162,7 +121,7 @@ assign spr_rom_a = {s_code, s_row, half};
 
 wire signed [9:0] row_s = $signed({2'b00, line_q}) - s_y;
 wire [31:0] pl       = emit_i[3] ? pl_r : pl_l;
-wire  [2:0] bi       = 3'd7 - emit_i[2:0];              // pixel 0 is the MSB of each plane byte
+wire  [2:0] bi       = 3'd7 - emit_i[2:0];
 wire  [3:0] emit_pen = {pl[{2'd3, bi}], pl[{2'd2, bi}], pl[{2'd1, bi}], pl[{2'd0, bi}]};
 wire  [9:0] emit_x   = s_x + {6'd0, emit_i};
 
@@ -171,7 +130,6 @@ always_ff @(posedge clk) begin
     if (reset) begin
         st <= S_IDLE; bank <= 1'b0; line_q <= 8'd0; clr_i <= 8'd0; spr_i <= 6'd0; spram_sel <= 2'd0; wait_c <= 2'd0;
     end else case (st)
-        // start a new build at the beginning of each line (bank flips with the wrap, so dot 0 reads the new half)
         S_IDLE: if (ce_pix && hc == 9'd317) begin
             line_q <= next_vv; bank <= ~bank; clr_i <= 8'd0; st <= S_CLR;
         end
@@ -180,15 +138,8 @@ always_ff @(posedge clk) begin
             if (clr_i == 8'hFF) begin spr_i <= 6'd0; spram_sel <= 2'd0; wait_c <= 2'd0; st <= S_R0; end
             else clr_i <= clr_i + 8'd1;
         end
-        // dpram_dc registers its address, so each read costs a wait cycle
-        // SPRFLIPY-2026-10-26: under the game's flip Y, sprites sit 3 lines above an exact mirror (Mad Planets' hiscore
-        // box frames its letter's tile cell; HW screenshot measured 3 px off). Not MAME (228 - sy goes the other way). Original below:
-        // else begin s_y <= $signed({2'b00, spram_d}) - 10'sd13; spram_sel <= 2'd1; wait_c <= 2'd0; st <= S_R1; end
         S_R0: if (wait_c != 2'd1) wait_c <= wait_c + 2'd1;
               else begin s_y <= $signed({2'b00, spram_d}) - (flip_y ? 10'sd10 : 10'sd13); spram_sel <= 2'd1; wait_c <= 2'd0; st <= S_R1; end
-        // SPRFLIPX-2026-10-25: under the game's flip X, MAME draws sprites 7 px below an exact mirror (sx = 233 - sx,
-        // not 240 - sx); Mad Planets' hiscore cursor sat 7 px off its letter. Counter +7 = screen -7. Original below:
-        // else begin s_x <= {2'b00, spram_d} - 10'd4; spram_sel <= 2'd2; wait_c <= 2'd0; st <= S_R2; end
         S_R1: if (wait_c != 2'd1) wait_c <= wait_c + 2'd1;
               else begin s_x <= {2'b00, spram_d} + (flip_x ? 10'd3 : -10'd4); spram_sel <= 2'd2; wait_c <= 2'd0; st <= S_R2; end
         S_R2: if (wait_c != 2'd1) wait_c <= wait_c + 2'd1;
@@ -213,22 +164,20 @@ always_ff @(posedge clk) begin
     endcase
 end
 
-// 512 x 8 (dpram_dc needs a byte width); the shown half is the one not being built
 logic [7:0] lb_q;
-dpram_dc #(.widthad_a(9)) u_linebuf
-(
-    .clock_a(clk), .address_a(lb_wa), .data_a({4'd0, lb_wd}), .wren_a(lb_we), .q_a(),
-    .clock_b(clk), .address_b({~bank, hh}), .data_b(8'd0), .wren_b(1'b0), .q_b(lb_q)
-);
+assign pr_i[1].a_addr = {6'd0, lb_wa};
+assign pr_i[1].a_d    = {4'd0, lb_wd};
+assign pr_i[1].a_we   = lb_we;
+assign pr_i[1].b_addr = {6'd0, {~bank, hh}};
+assign pr_i[1].b_d    = 8'd0;
+assign pr_i[1].b_we   = 1'b0;
+assign lb_q = pr_o[1].b_q;
 logic [3:0] spr_pen;
 always_ff @(posedge clk) if (div == 4'd3) spr_pen <= lb_q[3:0];
-
-/////////////////////////////  Palette, priority, output  /////////////////////////////
 
 logic [7:0] pal[32];
 always_ff @(posedge clk) if (pal_we) pal[pal_wa] <= pal_wd;
 
-// 2K / 1K / 470 / 240 ohm ladder into 180 ohm, normalised to 8 bits
 function automatic [7:0] dac(input [3:0] v);
     case (v)
         4'h0: dac = 8'd0;   4'h1: dac = 8'd16;  4'h2: dac = 8'd33;  4'h3: dac = 8'd49;
@@ -243,9 +192,6 @@ wire [3:0] pen = bg_priority ? (bg_pen  != 4'd0 ? bg_pen  : spr_pen)
 logic [23:0] rgb;
 always_ff @(posedge clk) if (div == 4'd8) rgb <= {dac(pal[{pen, 1'b1}][3:0]), dac(pal[{pen, 1'b0}][7:4]), dac(pal[{pen, 1'b0}][3:0])};
 
-// Sync sits inside blanking with porches on both sides (VBLANK 240-255: VSYNC 244-247, 4 front / 8 back porch;
-// HBLANK 256-317: HSYNC 272-295). A VSYNC that runs to the last blank line leaves no back porch and MiSTer's
-// video output stalls. CRT position offsets apply here.
 wire [8:0] hs_start = 9'd272 + {{5{h_adj[3]}}, h_adj};
 wire [7:0] vs_start = 8'd244 + {{4{v_adj[3]}}, v_adj};
 

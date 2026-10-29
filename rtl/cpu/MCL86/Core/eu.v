@@ -25,6 +25,8 @@
 // Revision 3.0 9/29/2025 
 // For DIV overflow AX and DX are restored to initial values
 //
+// Local revision (Cyclone V): ALU adder on the hard carry chain (see GEN_ADDER below).
+//
 //
 //------------------------------------------------------------------------
 //
@@ -328,17 +330,8 @@ assign eu_alu_out = (eu_opcode_type==3'h2) ? eu_alu2 :
 
 
 // Generate 16-bit full adder for the EU
-// TIMING-2026-10-25: original ripple adder below (LUT-per-bit, ~1 ns/bit on Cyclone V), uncomment to restore
-// assign carry[0] = 1'b0;
-// genvar i;
-// generate
-//   for (i=0; i < 16; i=i+1)
-//     begin : GEN_ADDER
-//       assign adder_out[i] =  eu_operand0[i] ^ eu_operand1[i] ^ carry[i];
-//       assign carry[i+1]   = (eu_operand0[i] & eu_operand1[i]) | (eu_operand0[i] & carry[i]) | (eu_operand1[i] & carry[i]);
-//     end
-// endgenerate
-// '+' maps to the hard carry chain; carry[i] = sum^a^b. Proven identical for all 2^32 inputs (LaserdiscGames verilator/eu_adder).
+// Local Cyclone V fix: '+' on the hard carry chain replaces upstream's 16-bit LUT ripple adder (GEN_ADDER), which
+// fails timing at an 80 MHz core clock. carry[i] = sum ^ a ^ b = the carry into bit i.
 wire [16:0] adder_sum17 = {1'b0, eu_operand0} + {1'b0, eu_operand1};
 assign adder_out = adder_sum17[15:0];
 assign carry     = {adder_sum17[16], adder_sum17[15:0] ^ eu_operand0 ^ eu_operand1};

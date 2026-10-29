@@ -1,26 +1,14 @@
-// Q*bert cabinet knocker (A-5195 solenoid hammering the wooden cabinet), synthesised - no samples.
-//   15 noise bands: xorshift32 noise -> 4th-order Butterworth band-pass (2 DF1 sections) -> * envelope
-//   (exponential decay per band; strike adds AMP, the recoil 124 ms later adds RAD)
-//   + 8 decaying resonators (wood 845/912/1013/2334/2588 Hz, cabinet 86/150/222 Hz), coupled form.
-// Model, fit and constants: tools/knocker_fit.py (bit-exact Python model; verilator/knocker checks it).
-// fs = 80 MHz / 1664 = 48.077 kHz.  One shared 27x27 multiplier, 3-stage MAC: operand reg -> product reg
-// -> accumulate reg; rounding/saturation always in a further register stage (80 MHz). 317 clocks of work
-// per 1664-clock sample.  Resources: 1 DSP (27x27), 2 M10K (state RAM 256x27, coef ROM 256x27).
-// Retrigger while ringing = superposition (envelopes add, resonators get another impulse); the recoil is
-// scheduled 124 ms after the latest strike.  Output is exactly 0 from 2 s after the last strike.
-// pause: no new samples, audio holds its last value, all state frozen; trig edges are not sampled.
 module knocker
 (
-    input  logic        clk,        // 80 MHz
+    input  logic        clk,
     input  logic        reset,
-    input  logic        pause,      // freeze the sound (hold state) while paused
-    input  logic        trig,       // knocker solenoid drive (level); a rising edge = one knock
+    input  logic        pause,
+    input  logic        trig,
     output logic signed [15:0] audio,
-    output logic        sample       // 1-clk pulse per output sample
+    output logic        sample
 );
 
 `include "knocker_coef.svh"
-
 
 function automatic logic signed [26:0] sat27(input logic signed [57:0] v);
     if (v > 58'sd67108863)       sat27 = 27'sh3ffffff;
@@ -41,35 +29,25 @@ function automatic logic [31:0] xorshift(input logic [31:0] x);
     xorshift = b ^ (b << 5);
 endfunction
 
-// ---------------------------------------------------------------------------------------------
-// sample timing, trigger, event counters
-// ---------------------------------------------------------------------------------------------
 logic [10:0] div;
-logic        clr;                  // post-reset state-RAM clear
+logic        clr;
 logic  [7:0] clr_a;
 logic        trig_d, pend;
 logic        strike_s, recoil_s, act_s;
-logic [12:0] rcnt;                 // samples to the recoil
-logic [16:0] acnt;                 // samples to idle
+logic [12:0] rcnt;
+logic [16:0] acnt;
 wire         edge_t = !pause && trig && !trig_d;
 wire         go     = !clr && !pause && (div == 11'd0);
 
-// ---------------------------------------------------------------------------------------------
-// sequencer
-// ---------------------------------------------------------------------------------------------
 localparam logic [1:0] PH_IDLE = 2'd0, PH_BAND = 2'd1, PH_MODE = 2'd2, PH_OUT = 2'd3;
-// MAC ops: INITR acc = p + 2^24 (round-half-up at >>25), INIT0 acc = p, ADD acc += p, OADD oacc += p
 localparam logic [2:0] M_NOP = 3'd0, M_INITR = 3'd1, M_INIT0 = 3'd2, M_ADD = 3'd3, M_OADD = 3'd4;
 
 logic  [1:0] ph;
-logic  [3:0] idx;                  // band 0..14 / mode 0..7
+logic  [3:0] idx;
 logic  [3:0] st;
-logic        par;                  // sample parity: x[n-2] / y[n-2] slot
+logic        par;
 
-// state RAM: band b {0,b,slot}: 0/1 N[par], 2/3 Y1[par], 4/5 Y2[par], 6 E;  mode m: {1,000,m,j} j 0 C, 1 S
-// the core's proven RAM wrapper (dpram_dc, altsyncram), 32 bits wide (27 is not a whole number of byte lanes);
-// 1-clk registered read like the original inferred block. A same-address read and write in one clock is undefined
-// on Cyclone V, so the sim checks it never happens.
+// 32 bits wide (27 is not a whole number of byte lanes); a same-address read + write in one clock is undefined on Cyclone V
 logic        [7:0]  ra;
 logic signed [26:0] sram_q;
 logic               w_en;
@@ -85,7 +63,7 @@ dpram_dc #(.widthad_a(8), .width_a(32)) u_state
 assign sram_q = $signed(sram_q32[26:0]);
 
 `ifdef VERILATOR
-always_ff @(posedge clk) if (w_en && !clr && w_a == ra) $error("knocker: state RAM read and write of %0d in one clock", w_a);   // the post-reset clear ignores reads
+always_ff @(posedge clk) if (w_en && !clr && w_a == ra) $error("knocker: state RAM read and write of %0d in one clock", w_a);
 `endif
 
 logic        [7:0]  ca;
@@ -102,29 +80,28 @@ always_comb begin
     ca = 8'd0;
     if (ph == PH_BAND) begin
         case (st)
-            4'd0: begin ra = rb | {7'd0,  par}; ca = cb | 8'd0; end    // N[n-2]   / G1
-            4'd1: begin ra = rb | {7'd1, ~par}; ca = cb | 8'd1; end    // Y1[n-1]  / NA11
-            4'd2: begin ra = rb | {7'd1,  par}; ca = cb | 8'd2; end    // Y1[n-2]  / NA12
-            4'd3: begin ra = rb | {7'd2, ~par}; ca = cb | 8'd3; end    // Y2[n-1]  / G2
-            4'd4: begin ra = rb | {7'd2,  par}; ca = cb | 8'd4; end    // Y2[n-2]  / NA21
-            4'd5: begin ra = rb | 8'd6;         ca = cb | 8'd5; end    // E        / NA22
-            4'd6: ca = cb | 8'd6;                                      // AMP
-            4'd7: ca = cb | 8'd7;                                      // RAD
-            4'd8: ca = cb | 8'd8;                                      // D
+            4'd0: begin ra = rb | {7'd0,  par}; ca = cb | 8'd0; end
+            4'd1: begin ra = rb | {7'd1, ~par}; ca = cb | 8'd1; end
+            4'd2: begin ra = rb | {7'd1,  par}; ca = cb | 8'd2; end
+            4'd3: begin ra = rb | {7'd2, ~par}; ca = cb | 8'd3; end
+            4'd4: begin ra = rb | {7'd2,  par}; ca = cb | 8'd4; end
+            4'd5: begin ra = rb | 8'd6;         ca = cb | 8'd5; end
+            4'd6: ca = cb | 8'd6;
+            4'd7: ca = cb | 8'd7;
+            4'd8: ca = cb | 8'd8;
             default: ;
         endcase
     end else if (ph == PH_MODE) begin
         case (st)
-            4'd0: begin ra = rm;         ca = cm | 8'd0; end           // C / RC
-            4'd1: begin ra = rm | 8'd1;  ca = cm | 8'd1; end           // S / RS
-            4'd2: ca = cm | 8'd2;                                      // -RS
-            4'd3: ca = cm | 8'd3;                                      // GM
+            4'd0: begin ra = rm;         ca = cm | 8'd0; end
+            4'd1: begin ra = rm | 8'd1;  ca = cm | 8'd1; end
+            4'd2: ca = cm | 8'd2;
+            4'd3: ca = cm | 8'd3;
             default: ;
         endcase
     end
 end
 
-// MAC
 logic signed [26:0] opa, opb;
 logic        [2:0]  mop, mop1;
 logic signed [53:0] prod;
@@ -142,30 +119,28 @@ always_ff @(posedge clk) begin
         M_OADD:  oacc <= oacc + {{6{prod[53]}}, prod};
         default: ;
     endcase
-    if (ph == PH_OUT && st == 4'd1) oacc <= 60'sd0;      // never coincides with an OADD
+    if (ph == PH_OUT && st == 4'd1) oacc <= 60'sd0;
     if (reset) begin
         mop1 <= M_NOP;
         oacc <= 60'sd0;
     end
 end
 
-// per-step registers
-logic        [31:0] x;             // noise
+logic        [31:0] x;
 logic signed [26:0] r_y1m2, r_y2m1, r_y2m2, r_g2, r_na21, r_na22, r_d, r_y, r_s, r_rc, r_rs, r_nrs, r_cn;
 logic signed [28:0] r_e, r_c;
-logic signed [59:0] r_t;           // output rounding
-logic signed [57:0] r_tm;          // resonator trunc-toward-0
+logic signed [59:0] r_t;
+logic signed [57:0] r_tm;
 
-wire signed [26:0] nz    = {{3{x[31]}}, x[31:16], 8'd0};                // Q24 +-0.5
+wire signed [26:0] nz    = {{3{x[31]}}, x[31:16], 8'd0};
 wire signed [27:0] y1dif = {r_y[26], r_y} - {r_y1m2[26], r_y1m2};
-wire signed [57:0] acc_t = acc + (acc[57] ? 58'sd33554431 : 58'sd0);    // trunc toward 0 pre-add
+wire signed [57:0] acc_t = acc + (acc[57] ? 58'sd33554431 : 58'sd0);
 
 always_ff @(posedge clk) begin
     sample <= 1'b0;
     w_en   <= 1'b0;
     mop    <= M_NOP;
 
-    // trigger edge -> pending strike (consumed at the next sample start)
     if (!pause) trig_d <= trig;
     if (go) begin
         strike_s <= pend;
@@ -221,10 +196,10 @@ always_ff @(posedge clk) begin
                            r_d <= coef_q;
                            if (r_e > 29'sd67108863) r_e <= 29'sd67108863;
                        end
-                4'd10: begin opa <= r_e[26:0]; opb <= r_d; end                 // E decay (product read at 12)
+                4'd10: begin opa <= r_e[26:0]; opb <= r_d; end
                 4'd12: begin
                            r_y  <= sat27(acc >>> 25);
-                           w_en <= 1'b1; w_a <= rb | 8'd6; w_d <= prod[51:25];   // E <= floor(e*D >> 25)
+                           w_en <= 1'b1; w_a <= rb | 8'd6; w_d <= prod[51:25];
                        end
                 4'd13: begin
                            w_en <= 1'b1; w_a <= rb | {7'd2, par}; w_d <= r_y;
@@ -250,10 +225,10 @@ always_ff @(posedge clk) begin
                            else if (r_c < -29'sd67108864) r_c <= -29'sd67108864;
                        end
                 4'd3:  begin r_nrs <= coef_q; opa <= r_c[26:0]; opb <= r_rc; mop <= M_INIT0; end
-                4'd4:  begin opa <= r_s; opb <= coef_q; mop <= M_OADD; end       // out += s*GM
-                4'd5:  begin opa <= r_s; opb <= r_nrs; mop <= M_ADD; end        // c' = rc*c - rs*s
+                4'd4:  begin opa <= r_s; opb <= coef_q; mop <= M_OADD; end
+                4'd5:  begin opa <= r_s; opb <= r_nrs; mop <= M_ADD; end
                 4'd6:  begin opa <= r_c[26:0]; opb <= r_rs; mop <= M_INIT0; end
-                4'd7:  begin opa <= r_s; opb <= r_rc; mop <= M_ADD; end         // s' = rs*c + rc*s
+                4'd7:  begin opa <= r_s; opb <= r_rc; mop <= M_ADD; end
                 4'd8:  r_tm <= acc_t;
                 4'd9:  r_cn <= sat27(r_tm >>> 25);
                 4'd10: r_tm <= acc_t;
@@ -271,7 +246,7 @@ always_ff @(posedge clk) begin
             endcase
         end
 
-        default: begin  // PH_OUT
+        default: begin
             st <= st + 4'd1;
             if (st == 4'd0) r_t <= oacc + 60'sd268435456;
             else begin

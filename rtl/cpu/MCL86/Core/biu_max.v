@@ -19,6 +19,10 @@
 // Revision 1.0 10/8/15 
 // Initial revision
 //
+// Local revision (Cyclone V): the microcode's cycle counts assume a 100 MHz CORE_CLK (= a 4.77 MHz 8088).
+// CYC_MUL / CYC_SHIFT scale every count for another core clock; FAST_BUS shortens the bus FSM's idle states
+// (1: 8 core clocks per T-state, 2: 4). Defaults = upstream behaviour.
+//
 //
 //------------------------------------------------------------------------
 //
@@ -45,13 +49,12 @@
 //------------------------------------------------------------------------
 
 
-// DIAG-REVERT-2026-10-15: original header was "module biu_max" with no parameter list
 module biu_max
   #(
-    // DIAG: microcode cycle counts assume CORE_CLK 100 MHz = a 4.77 MHz 8088; loads are scaled by MUL>>SHIFT.
+    // cycle-count scale: loads are (count * CYC_MUL) >> CYC_SHIFT (1 / 0 = the 100 MHz upstream timing)
     parameter integer CYC_MUL   = 1,
     parameter integer CYC_SHIFT = 0,
-    // DIAG-REVERT-2026-10-15: new, delete on revert. 1 = skip the bus FSM's idle counts (8 core clocks per T at 80 MHz/10 MHz)
+    // 0 = upstream bus FSM; 1 = 8 core clocks per T-state (80 MHz core, 10 MHz bus); 2 = 4 core clocks per T-state
     parameter integer FAST_BUS  = 0
   )
   (
@@ -155,7 +158,7 @@ reg  [15:0] biu_return_data_int;
 reg  [15:0] biu_return_data_int_d1;
 reg  [15:0] biu_return_data_int_d2;
 reg  [12:0] clock_cycle_counter;
-wire [25:0] cyc_scaled = EU_BIU_DATAOUT[12:0] * CYC_MUL;   // DIAG-REVERT-2026-10-15: new, delete on revert
+wire [25:0] cyc_scaled = EU_BIU_DATAOUT[12:0] * CYC_MUL;   // local: cycle-count scaling (header)
 reg  [15:0] eu_register_r3_d;
 reg  [7:0]  latched_data_in;
 reg  [15:0] pfq_addr_out;
@@ -426,9 +429,7 @@ else
     // Strobe from EU to set the 8088 clock cycle counter
     if (eu_biu_strobe==2'b10)
       begin
-        // DIAG-REVERT-2026-10-15: original below, uncomment to restore
-        // clock_cycle_counter <= EU_BIU_DATAOUT[12:0];
-        clock_cycle_counter <= cyc_scaled[CYC_SHIFT +: 13];   // DIAG
+        clock_cycle_counter <= cyc_scaled[CYC_SHIFT +: 13];   // local: upstream loads EU_BIU_DATAOUT[12:0] unscaled
       end
     else if (clock_cycle_counter!=13'h0000)
       begin
@@ -763,7 +764,7 @@ else
       default : ;
     endcase
 
-    // DIAG-REVERT-2026-10-15: new block, delete on revert. Jumps only from idle states, so every action keeps its order.
+    // local: FAST_BUS shortcuts (header). Jumps only from idle states, so every bus action keeps its order.
     if (FAST_BUS == 2)
       case (biu_state)
         8'h02 : biu_state <= 8'h18;   // T1 sync -> 1A in 4 clocks

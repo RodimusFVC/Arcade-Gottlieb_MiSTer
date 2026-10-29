@@ -1,76 +1,46 @@
-//============================================================================
-//
-//  Gottlieb GG-III logic board (8088 system): address decode, RAM, I/O, watchdog, video
+//  Based on MAME gottlieb.cpp (Fabrice Frances, Nicola Salmoria, Aaron Giles, BSD-3-Clause)
+//  Bus side after the LaserdiscGames core's Mach 3 board (same logic board)
 //  Copyright (C) 2026 Rodimus
-//
-//  Bus side carried over from the LaserdiscGames core's Mach 3 board (same logic board, HW-proven).
-//  MAME reference: gottlieb/gottlieb.cpp (reactor_map, gottlieb_*_map).
-//
-//  map_sel (MRA index 1 byte 148):
-//    0 RAM map      0000-0FFF NVRAM, 1000-2FFF RAM              (Q*bert, Mad Planets, most sets)
-//    1 ROM map      0000-0FFF NVRAM, 1000-2FFF ROM              (Krull, Argus)
-//    2 RAM+ROM map  0000-0FFF NVRAM, 1000-1FFF RAM, 2000-2FFF ROM (3 Stooges, Video Vince)
-//    3 Reactor      0000-1FFF RAM, 2000 sprites, 3000 video RAM, 4000 char RAM, 6000 palette, 7000 I/O, 8000-FFFF ROM
-//  Maps 0-2 share:  3000-37FF sprite RAM (256, write-only), 3800-3FFF video RAM (1K), 4000-4FFF char RAM (4K),
-//                   5000-57FF palette (32), 5800-5FFF I/O (8, only with A3 = 0), 6000-FFFF ROM.
-//
-//  I/O (a[2:0]): read  0 DSW, 1 IN1, 2 IN2 (trackball H), 3 IN3 (trackball V), 4 IN4
-//                write 0 watchdog, 1 analog (trackball) reset, 2 sound command, 3 outputs
-//  Outputs (out_mode, byte 151): bits 0-2 video control (BG priority, flip X, flip Y) on every game;
-//    1 Q*bert: bit 5 knocker   2 Qubes: bit 4 sprite bank   3 3 Stooges: bits 6-5 joystick select
-//
-//  Main ROM pool address (48K image): CPU 6000-FFFF -> 0000-9FFF, CPU 1000-2FFF -> A000-BFFF.
-//
-//============================================================================
 
 module gottlieb_main
 (
-    input  logic        clk,            // 80 MHz
+    input  logic        clk,
     input  logic        reset,
     input  logic        pause,
     input  logic  [1:0] map_sel,
     input  logic  [2:0] out_mode,
     input  logic  [1:0] an_flags,       // [0] IN2 = trackball H delta, [1] IN3 = trackball V delta
     input  logic        no_wd,
-    input  logic  [2:0] tile_cfg,       // [0] codes 00-7F from ROM, [1] codes 80-FF from ROM, [2] split at C0 (Screw Loose)
+    input  logic  [2:0] tile_cfg,
 
-    // 8088 bus (dl2_bus request / acknowledge)
-    input  logic        req,
-    input  logic  [2:0] req_type,
-    input  logic [15:0] req_addr,
-    input  logic  [7:0] req_wdata,
-    output logic  [7:0] req_rdata,
-    output logic        req_ack,
-    output logic        wd_reset,       // watchdog: CPU reset request
+    output chip_pool_pkg::mcl86_i_t mcl86_0_i,
+    output ram_pool_pkg::pram_i_t [6:0] pr_i,
+    input  ram_pool_pkg::pram_o_t [6:0] pr_o,
+    input  chip_pool_pkg::mcl86_o_t mcl86_0_o,
 
-    // inputs (already assembled to the board's polarity)
     input  logic  [7:0] in_dsw,
     input  logic  [7:0] in1,
     input  logic  [7:0] in2,
     input  logic  [7:0] in3,
     input  logic  [7:0] in4,
-    input  logic  [3:0] joy_p1,         // 3 Stooges multiplexed sticks, active high {L, D, R, U}
+    input  logic  [3:0] joy_p1,
     input  logic  [3:0] joy_p2,
     input  logic  [3:0] joy_p3,
-    input  logic  [7:0] track_h,        // free-running trackball / dial position counters
+    input  logic  [7:0] track_h,
     input  logic  [7:0] track_v,
 
-    // main program ROM (pool in gottlieb_board)
     output logic [15:0] rom_a,
     input  logic  [7:0] rom_d,
 
-    // NVRAM second port (MiSTer load / save)
     input  logic [11:0] nv_addr,
     input  logic  [7:0] nv_din,
     input  logic        nv_we,
     output logic  [7:0] nv_dout,
 
-    // sound board command
     output logic  [7:0] snd_cmd,
     output logic        snd_stb,
     output logic        knocker,
 
-    // graphics ROMs (pools in gottlieb_board)
     output logic [12:0] tile_rom_a,
     input  logic  [7:0] tile_rom_d,
     output logic [13:0] spr_rom_a,
@@ -81,7 +51,6 @@ module gottlieb_main
     input  logic  [3:0] v_adj,
 
     output logic        ce_pix,
-    output logic        vblank_rise,    // NMI tick
     output logic  [7:0] video_r,
     output logic  [7:0] video_g,
     output logic  [7:0] video_b,
@@ -91,7 +60,30 @@ module gottlieb_main
     output logic        video_vblank
 );
 
-/////////////////////////////  Decode  /////////////////////////////
+logic       wd_reset, vblank_rise;
+wire        req       = mcl86_0_o.req;
+wire  [2:0] req_type  = mcl86_0_o.req_type;
+wire [15:0] req_addr  = mcl86_0_o.req_addr[15:0];
+wire  [7:0] req_wdata = mcl86_0_o.req_wdata;
+logic [7:0] req_rdata;
+logic       req_ack;
+
+wire  cpu_reset = reset | wd_reset;
+logic [2:0] clkdiv;
+logic       cpu_clk;
+always_ff @(posedge clk) begin
+    if (cpu_reset) begin clkdiv <= 3'd0; cpu_clk <= 1'b0; end
+    else if (!pause) begin
+        clkdiv <= clkdiv + 3'd1;
+        if (clkdiv == 3'd7) cpu_clk <= ~cpu_clk;
+    end
+end
+assign mcl86_0_i.reset     = cpu_reset;
+assign mcl86_0_i.cpu_clk   = cpu_clk;
+assign mcl86_0_i.nmi       = vblank_rise & ~pause;
+assign mcl86_0_i.intr      = 1'b0;
+assign mcl86_0_i.req_rdata = req_rdata;
+assign mcl86_0_i.req_ack   = req_ack;
 
 wire [15:0] a       = req_addr;
 wire        reactor = (map_sel == 2'd3);
@@ -119,7 +111,7 @@ always_comb begin
         4'h2:         if (map_sel == 2'd0) in_ram = 1; else in_rom = 1;
         4'h3:         if (a[11]) in_vram = 1; else in_spr = 1;
         4'h4:         in_chram = 1;
-        4'h5:         if (!a[11]) in_pal = 1; else if (!a[3]) in_io = 1;   // I/O needs A3 = 0 (Q*bert A1 sheet; MAME mirrors wider)
+        4'h5:         if (!a[11]) in_pal = 1; else if (!a[3]) in_io = 1;
         default:      in_rom   = 1;
     endcase
 end
@@ -129,59 +121,59 @@ wire       wr   = req & req_ack & is_memwr;
 
 assign rom_a = (a >= 16'h6000) ? a - 16'h6000 : a + 16'h9000;
 
-/////////////////////////////  RAM  /////////////////////////////
-
 logic [7:0] nv_q, ram_q, vram_q, chram_q;
 logic [9:0] vram_va;
 logic [11:0] chram_va;
 logic [7:0] spram_va, vram_vd, chram_vd, spram_vd;
 
-// NVINV-2026-10-25: stored inverted on both ports, so unloaded NVRAM (BRAM powers up 00) reads FF like MAME's
-// DEFAULT_ALL_1 (Mad Planets then builds its default score table); the .nvm file format is unchanged. Original below:
-// dpram_dc #(.widthad_a(12)) u_nvram
-// (
-//     .clock_a(clk), .address_a(a[11:0]), .data_a(req_wdata), .wren_a(wr & in_nv), .q_a(nv_q),
-//     .clock_b(clk), .address_b(nv_addr), .data_b(nv_din), .wren_b(nv_we), .q_b(nv_dout)
-// );
+// NVRAM stored inverted on both ports: unloaded (BRAM powers up 00) it reads FF
 logic [7:0] nv_qn, nv_doutn;
-dpram_dc #(.widthad_a(12)) u_nvram
-(
-    .clock_a(clk), .address_a(a[11:0]), .data_a(~req_wdata), .wren_a(wr & in_nv), .q_a(nv_qn),
-    .clock_b(clk), .address_b(nv_addr), .data_b(~nv_din), .wren_b(nv_we), .q_b(nv_doutn)
-);
+assign pr_i[0].a_addr = {3'd0, a[11:0]};
+assign pr_i[0].a_d    = ~req_wdata;
+assign pr_i[0].a_we   = wr & in_nv;
+assign pr_i[0].b_addr = {3'd0, nv_addr};
+assign pr_i[0].b_d    = ~nv_din;
+assign pr_i[0].b_we   = nv_we;
+assign nv_qn = pr_o[0].a_q;
+assign nv_doutn = pr_o[0].b_q;
 assign nv_q    = ~nv_qn;
 assign nv_dout = ~nv_doutn;
 
-// 1000-2FFF (Reactor 1000-1FFF)
 wire [12:0] ram_a = a[12:0] - 13'h1000;
-dpram_dc #(.widthad_a(13)) u_ram
-(
-    .clock_a(clk), .address_a(ram_a), .data_a(req_wdata), .wren_a(wr & in_ram), .q_a(ram_q),
-    .clock_b(clk), .address_b(13'd0), .data_b(8'd0), .wren_b(1'b0), .q_b()
-);
+assign pr_i[1].a_addr = {2'd0, ram_a};
+assign pr_i[1].a_d    = req_wdata;
+assign pr_i[1].a_we   = wr & in_ram;
+assign pr_i[1].b_addr = {2'd0, 13'd0};
+assign pr_i[1].b_d    = 8'd0;
+assign pr_i[1].b_we   = 1'b0;
+assign ram_q = pr_o[1].a_q;
 
-dpram_dc #(.widthad_a(10)) u_vram
-(
-    .clock_a(clk), .address_a(a[9:0]), .data_a(req_wdata), .wren_a(wr & in_vram), .q_a(vram_q),
-    .clock_b(clk), .address_b(vram_va), .data_b(8'd0), .wren_b(1'b0), .q_b(vram_vd)
-);
+assign pr_i[2].a_addr = {5'd0, a[9:0]};
+assign pr_i[2].a_d    = req_wdata;
+assign pr_i[2].a_we   = wr & in_vram;
+assign pr_i[2].b_addr = {5'd0, vram_va};
+assign pr_i[2].b_d    = 8'd0;
+assign pr_i[2].b_we   = 1'b0;
+assign vram_q = pr_o[2].a_q;
+assign vram_vd = pr_o[2].b_q;
 
-dpram_dc #(.widthad_a(12)) u_chram
-(
-    .clock_a(clk), .address_a(a[11:0]), .data_a(req_wdata), .wren_a(wr & in_chram), .q_a(chram_q),
-    .clock_b(clk), .address_b(chram_va), .data_b(8'd0), .wren_b(1'b0), .q_b(chram_vd)
-);
+assign pr_i[3].a_addr = {3'd0, a[11:0]};
+assign pr_i[3].a_d    = req_wdata;
+assign pr_i[3].a_we   = wr & in_chram;
+assign pr_i[3].b_addr = {3'd0, chram_va};
+assign pr_i[3].b_d    = 8'd0;
+assign pr_i[3].b_we   = 1'b0;
+assign chram_q = pr_o[3].a_q;
+assign chram_vd = pr_o[3].b_q;
 
-// sprite RAM is write-only to the CPU
-dpram_dc #(.widthad_a(8)) u_spram
-(
-    .clock_a(clk), .address_a(a[7:0]), .data_a(req_wdata), .wren_a(wr & in_spr), .q_a(),
-    .clock_b(clk), .address_b(spram_va), .data_b(8'd0), .wren_b(1'b0), .q_b(spram_vd)
-);
+assign pr_i[4].a_addr = {7'd0, a[7:0]};
+assign pr_i[4].a_d    = req_wdata;
+assign pr_i[4].a_we   = wr & in_spr;
+assign pr_i[4].b_addr = {7'd0, spram_va};
+assign pr_i[4].b_d    = 8'd0;
+assign pr_i[4].b_we   = 1'b0;
+assign spram_vd = pr_o[4].b_q;
 
-/////////////////////////////  Watchdog  /////////////////////////////
-
-// Cleared by a write to I/O 0; 16 VBLANKs without one reset the CPU. Frozen while paused.
 logic [4:0] wd_cnt;
 logic [7:0] wd_hold;
 always_ff @(posedge clk) begin
@@ -197,8 +189,6 @@ always_ff @(posedge clk) begin
     end
 end
 assign wd_reset = (wd_hold != 8'd0);
-
-/////////////////////////////  Outputs, sound, analog  /////////////////////////////
 
 logic [7:0] out_r;
 logic [7:0] tb_ref_h, tb_ref_v;
@@ -221,8 +211,6 @@ wire       spritebank  = (out_mode == 3'd2) & out_r[4];
 assign     knocker     = (out_mode == 3'd1) & out_r[5];
 wire [1:0] joy_sel     = (out_mode == 3'd3) ? out_r[6:5] : 2'd3;
 
-/////////////////////////////  I/O read  /////////////////////////////
-
 logic [3:0] joy_mux;
 always_comb case (joy_sel)
     2'd0:    joy_mux = joy_p2;
@@ -241,9 +229,6 @@ always_comb case (io_a)
     default: io_q = 8'hFF;
 endcase
 
-/////////////////////////////  Bus response  /////////////////////////////
-
-// dpram_dc registers its address: a read is valid the clock after it is presented.
 logic mem_wait;
 always_ff @(posedge clk) begin
     req_ack <= 1'b0;
@@ -274,11 +259,9 @@ always_ff @(posedge clk) begin
     end
 end
 
-/////////////////////////////  Video  /////////////////////////////
-
 gottlieb_video video
 (
-    .clk(clk), .reset(reset),
+    .clk(clk), .reset(reset), .pr_i(pr_i[6:5]), .pr_o(pr_o[6:5]),
     .bg_priority(bg_priority), .flip_x(flip_x), .flip_y(flip_y), .spritebank(spritebank), .tile_cfg(tile_cfg),
     .pal_we(wr & in_pal), .pal_wa(a[4:0]), .pal_wd(req_wdata),
     .vram_a(vram_va), .vram_d(vram_vd), .chram_a(chram_va), .chram_d(chram_vd), .spram_a(spram_va), .spram_d(spram_vd),

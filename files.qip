@@ -1,5 +1,7 @@
 set_global_assignment -name SYSTEMVERILOG_FILE Arcade-Gottlieb.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/gottlieb_board.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/chip_pool_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/ram_pool_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gottlieb_dispatcher.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/gottlieb_main/gottlieb_main.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/gottlieb_main/gottlieb_video.sv
@@ -22,11 +24,10 @@ set_global_assignment -name VERILOG_FILE rtl/cpu/MCL86/Core/biu_max.v
 set_global_assignment -name VERILOG_FILE rtl/cpu/MCL86/Core/eu.v
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/MCL86/EU4Kx32.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/MCL86/dl2_bus.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/MCL86/mcl86_cpu.sv
 set_global_assignment -name QIP_FILE rtl/cpu/T65/t65.qip
 
 set_global_assignment -name VERILOG_FILE rtl/mister_custom/pause.v
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mister_custom/controllers.sv
 
-# DPRAMSV-2026-10-25: VHDL dpram_dc replaced by the SystemVerilog one (same ports/generics + byteena); original:
-# set_global_assignment -name VHDL_FILE rtl/ram_rom/dpram_dc.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ram_rom/dpram_dc.sv
